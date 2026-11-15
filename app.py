@@ -2921,8 +2921,247 @@ def draw_geumsan_route_map(
 
 
 # =============================================================================
+# 🟢 대전광역시 외곽버스 34번 전용 데이터 및 계산 함수 (첨부 자료 100% 반영 · 2026. 2. 26 기준)
+# =============================================================================
+
+DAEJEON_34_META = {
+    "bus_no": "34",
+    "title": "대전광역시 외곽버스 34번",
+    "operator": "대전버스 (인가대수 4대)",
+    "interval": "40~55분 간격 (일 22회 운행)",
+    "first_last": "첫차 06:00 · 막차 22:00 (양방향 동일)",
+    "basis_date": "2026년 2월 26일 기준",
+    "start_desc": "[출발] 대전 중구 유천동(서남부터미널기점) / [도착] 산성동(서남부터미널종점)",
+    "end_desc": "충남 금산군 진산면 묵산리 (대둔산휴게소 · 배티재)",
+}
+
+# 첨부 4.2 시간표 (총 22회: 서남부터미널 출발 / 대둔산휴게소 출발)
+DAEJEON_34_TIMETABLE = [
+    {"seq": 1,  "seonambu": "06:00", "daedunsan": "06:00"},
+    {"seq": 2,  "seonambu": "06:45", "daedunsan": "06:35"},
+    {"seq": 3,  "seonambu": "07:30", "daedunsan": "07:15"},
+    {"seq": 4,  "seonambu": "08:10", "daedunsan": "07:50"},
+    {"seq": 5,  "seonambu": "09:00", "daedunsan": "08:40"},
+    {"seq": 6,  "seonambu": "09:45", "daedunsan": "09:20"},
+    {"seq": 7,  "seonambu": "10:40", "daedunsan": "10:05"},
+    {"seq": 8,  "seonambu": "11:20", "daedunsan": "10:50"},
+    {"seq": 9,  "seonambu": "12:10", "daedunsan": "11:45"},
+    {"seq": 10, "seonambu": "12:55", "daedunsan": "12:30"},
+    {"seq": 11, "seonambu": "13:40", "daedunsan": "13:20"},
+    {"seq": 12, "seonambu": "14:30", "daedunsan": "14:10"},
+    {"seq": 13, "seonambu": "15:15", "daedunsan": "14:55"},
+    {"seq": 14, "seonambu": "16:00", "daedunsan": "15:45"},
+    {"seq": 15, "seonambu": "16:55", "daedunsan": "16:35"},
+    {"seq": 16, "seonambu": "17:45", "daedunsan": "17:20"},
+    {"seq": 17, "seonambu": "18:35", "daedunsan": "18:10"},
+    {"seq": 18, "seonambu": "19:20", "daedunsan": "19:05"},
+    {"seq": 19, "seonambu": "20:00", "daedunsan": "19:50"},
+    {"seq": 20, "seonambu": "20:40", "daedunsan": "20:35"},
+    {"seq": 21, "seonambu": "21:20", "daedunsan": "21:20"},
+    {"seq": 22, "seonambu": "22:00", "daedunsan": "22:00"},
+]
+
+# 첨부 정류장 표 전체 반영 (서남부터미널기점 ➔ 대둔산휴게소 / 대둔산휴게소 ➔ 서남부터미널종점)
+# offset_min: 기점 출발 후 평균 통과 소요분(약 52분 코스), zone: 구역 표시
+DAEJEON_34_STOPS_TO_DAEDUN = [
+    {"name": "서남부터미널기점", "id": "21660", "zone": "대전 중구", "hub": True,  "min": 0},
+    {"name": "버드내아파트",     "id": "21680", "zone": "대전 중구", "hub": False, "min": 2},
+    {"name": "서부종합시장",     "id": "21690", "zone": "대전 중구", "hub": False, "min": 3},
+    {"name": "대전서남부터미널", "id": "22370", "zone": "대전 중구", "hub": True,  "min": 5},
+    {"name": "머티네거리",       "id": "22320", "zone": "대전 중구", "hub": False, "min": 6},
+    {"name": "산성동행정복지센터", "id": "22300", "zone": "대전 중구", "hub": False, "min": 8},
+    {"name": "산성네거리",       "id": "22280", "zone": "대전 중구", "hub": False, "min": 9},
+    {"name": "산성초등학교",     "id": "22570", "zone": "대전 중구", "hub": False, "min": 11},
+    {"name": "사정동",           "id": "22550", "zone": "대전 중구", "hub": False, "min": 12},
+    {"name": "우남스타원아파트", "id": "22500", "zone": "대전 중구", "hub": False, "min": 14},
+    {"name": "농산물유통센터",   "id": "22460", "zone": "대전 중구", "hub": False, "min": 15},
+    {"name": "안영생활체육단지", "id": "22680", "zone": "대전 중구", "hub": False, "min": 17},
+    {"name": "한빛고교",         "id": "22670", "zone": "대전 중구", "hub": True,  "min": 18},
+    {"name": "안영동검바위마을", "id": "22700", "zone": "대전 중구", "hub": False, "min": 20},
+    {"name": "샛고개",           "id": "23520", "zone": "대전·금산 경계", "hub": False, "min": 21},
+    {"name": "한마음아파트",     "id": "74170", "zone": "금산 복수면", "hub": False, "min": 23},
+    {"name": "구만리",           "id": "74230", "zone": "금산 복수면", "hub": True,  "min": 24},
+    {"name": "부대앞",           "id": "74110", "zone": "금산 복수면", "hub": False, "min": 26},
+    {"name": "지량리",           "id": "74070", "zone": "금산 복수면", "hub": False, "min": 27},
+    {"name": "둥구나무집",       "id": "74090", "zone": "금산 복수면", "hub": False, "min": 28},
+    {"name": "지량1리",          "id": "74010", "zone": "금산 복수면", "hub": False, "min": 29},
+    {"name": "압재",             "id": "74030", "zone": "금산 복수면", "hub": False, "min": 31},
+    {"name": "신대2리",          "id": "74130", "zone": "금산 복수면", "hub": False, "min": 32},
+    {"name": "신대3리",          "id": "74140", "zone": "금산 복수면", "hub": False, "min": 33},
+    {"name": "신대1리",          "id": "74190", "zone": "금산 복수면", "hub": False, "min": 35},
+    {"name": "신대초등학교",     "id": "74240", "zone": "금산 복수면", "hub": True,  "min": 36},
+    {"name": "구례2리",          "id": "74300", "zone": "금산 복수면", "hub": False, "min": 37},
+    {"name": "구례1리",          "id": "74270", "zone": "금산 복수면", "hub": False, "min": 38},
+    {"name": "구례3리",          "id": "74320", "zone": "금산 복수면", "hub": False, "min": 39},
+    {"name": "운곡마을",         "id": "74340", "zone": "금산 복수면", "hub": False, "min": 40},
+    {"name": "백암리",           "id": "74210", "zone": "금산 복수면", "hub": False, "min": 41},
+    {"name": "수영2리",          "id": "74370", "zone": "금산 복수면", "hub": False, "min": 42},
+    {"name": "복수중학교",       "id": "74380", "zone": "금산 복수면", "hub": True,  "min": 43},
+    {"name": "수영3리",          "id": "74400", "zone": "금산 복수면", "hub": False, "min": 44},
+    {"name": "수영1리",          "id": "74420", "zone": "금산 복수면", "hub": False, "min": 45},
+    {"name": "복수면사무소",     "id": "74440", "zone": "금산 복수면", "hub": True,  "min": 46},
+    {"name": "곡남리종점",       "id": "74460", "zone": "금산 복수면", "hub": False, "min": 47},
+    {"name": "곡남삼거리",       "id": "74550", "zone": "금산 복수면", "hub": False, "min": 48},
+    {"name": "교촌리모랭이골",   "id": "74590", "zone": "금산 진산면", "hub": False, "min": 49},
+    {"name": "교촌1리",          "id": "74570", "zone": "금산 진산면", "hub": False, "min": 50},
+    {"name": "방축리",           "id": "74610", "zone": "금산 진산면", "hub": False, "min": 51},
+    {"name": "진산면사무소",     "id": "74630", "zone": "금산 진산면", "hub": True,  "min": 53},
+    {"name": "진산",             "id": "74650", "zone": "금산 진산면", "hub": True,  "min": 54},
+    {"name": "원묵산",           "id": "74680", "zone": "금산 진산면", "hub": False, "min": 56},
+    {"name": "대둔산눈썰매장",   "id": "74690", "zone": "금산 진산면", "hub": False, "min": 58},
+    {"name": "대둔산휴게소",     "id": "74700", "zone": "금산 진산면", "hub": True,  "min": 60},
+]
+
+DAEJEON_34_STOPS_TO_DAEJEON = [
+    {"name": "대둔산휴게소",     "id": "74700", "zone": "금산 진산면", "hub": True,  "min": 0},
+    {"name": "대둔산눈썰매장",   "id": "3061",  "zone": "금산 진산면", "hub": False, "min": 2},
+    {"name": "원묵산",           "id": "3059",  "zone": "금산 진산면", "hub": False, "min": 4},
+    {"name": "진산",             "id": "74650", "zone": "금산 진산면", "hub": True,  "min": 6},
+    {"name": "진산면사무소",     "id": "74640", "zone": "금산 진산면", "hub": True,  "min": 7},
+    {"name": "방축리",           "id": "74620", "zone": "금산 진산면", "hub": False, "min": 9},
+    {"name": "교촌1리",          "id": "74580", "zone": "금산 진산면", "hub": False, "min": 10},
+    {"name": "교촌리모랭이골",   "id": "74600", "zone": "금산 진산면", "hub": False, "min": 11},
+    {"name": "곡남삼거리",       "id": "74560", "zone": "금산 복수면", "hub": False, "min": 12},
+    {"name": "곡남리종점",       "id": "74470", "zone": "금산 복수면", "hub": False, "min": 13},
+    {"name": "복수면사무소",     "id": "74450", "zone": "금산 복수면", "hub": True,  "min": 14},
+    {"name": "수영1리",          "id": "74430", "zone": "금산 복수면", "hub": False, "min": 15},
+    {"name": "수영3리",          "id": "74410", "zone": "금산 복수면", "hub": False, "min": 16},
+    {"name": "복수중학교",       "id": "74390", "zone": "금산 복수면", "hub": True,  "min": 17},
+    {"name": "수영2리",          "id": "74360", "zone": "금산 복수면", "hub": False, "min": 18},
+    {"name": "백암리",           "id": "74220", "zone": "금산 복수면", "hub": False, "min": 19},
+    {"name": "운곡마을",         "id": "74350", "zone": "금산 복수면", "hub": False, "min": 20},
+    {"name": "구례3리",          "id": "74330", "zone": "금산 복수면", "hub": False, "min": 21},
+    {"name": "구례1리",          "id": "74280", "zone": "금산 복수면", "hub": False, "min": 22},
+    {"name": "구례2리",          "id": "74310", "zone": "금산 복수면", "hub": False, "min": 23},
+    {"name": "신대초등학교",     "id": "74260", "zone": "금산 복수면", "hub": True,  "min": 24},
+    {"name": "신대1리",          "id": "74200", "zone": "금산 복수면", "hub": False, "min": 25},
+    {"name": "신대3리",          "id": "74160", "zone": "금산 복수면", "hub": False, "min": 27},
+    {"name": "신대2리",          "id": "74150", "zone": "금산 복수면", "hub": False, "min": 28},
+    {"name": "신대",             "id": "74060", "zone": "금산 복수면", "hub": False, "min": 29},
+    {"name": "압재",             "id": "74040", "zone": "금산 복수면", "hub": False, "min": 30},
+    {"name": "지량1리",          "id": "74020", "zone": "금산 복수면", "hub": False, "min": 31},
+    {"name": "둥구나무집",       "id": "74100", "zone": "금산 복수면", "hub": False, "min": 32},
+    {"name": "지량리",           "id": "74080", "zone": "금산 복수면", "hub": False, "min": 33},
+    {"name": "부대앞",           "id": "74120", "zone": "금산 복수면", "hub": False, "min": 34},
+    {"name": "구만리",           "id": "74250", "zone": "금산 복수면", "hub": True,  "min": 36},
+    {"name": "한마음아파트",     "id": "74180", "zone": "금산 복수면", "hub": False, "min": 37},
+    {"name": "샛고개",           "id": "22730", "zone": "대전·금산 경계", "hub": False, "min": 39},
+    {"name": "안영동검바위마을", "id": "22710", "zone": "대전 중구", "hub": False, "min": 40},
+    {"name": "한빛고교",         "id": "22660", "zone": "대전 중구", "hub": True,  "min": 42},
+    {"name": "안영생활체육단지", "id": "22690", "zone": "대전 중구", "hub": False, "min": 43},
+    {"name": "농산물유통센터",   "id": "22470", "zone": "대전 중구", "hub": False, "min": 45},
+    {"name": "우남스타원아파트", "id": "22520", "zone": "대전 중구", "hub": False, "min": 46},
+    {"name": "사정동",           "id": "22560", "zone": "대전 중구", "hub": False, "min": 48},
+    {"name": "산성초등학교",     "id": "22580", "zone": "대전 중구", "hub": False, "min": 49},
+    {"name": "산성네거리",       "id": "22290", "zone": "대전 중구", "hub": False, "min": 51},
+    {"name": "산성시장",         "id": "22310", "zone": "대전 중구", "hub": True,  "min": 53},
+    {"name": "서남부터미널종점", "id": "21670", "zone": "대전 중구", "hub": True,  "min": 57},
+]
+
+
+def analyze_daejeon_34(
+    direction_key: str,
+    my_stop_name: str,
+    dest_stop_name: str,
+    now_dt: datetime,
+) -> dict:
+    """대전 외곽버스 34번 선택 방향·정류장 기준 실시간 운행 위치 및 다음 도착 시각 계산"""
+    is_to_daedun = direction_key == "to_daedun"
+    stops = DAEJEON_34_STOPS_TO_DAEDUN if is_to_daedun else DAEJEON_34_STOPS_TO_DAEJEON
+    dep_col = "seonambu" if is_to_daedun else "daedunsan"
+    dep_times = [row[dep_col] for row in DAEJEON_34_TIMETABLE]
+    dep_mins = [parse_hhmm_to_min(t) for t in dep_times]
+
+    stop_names = [s["name"] for s in stops]
+    o_idx = stop_names.index(my_stop_name) if my_stop_name in stop_names else 0
+    d_idx = stop_names.index(dest_stop_name) if dest_stop_name in stop_names else len(stops) - 1
+    if d_idx <= o_idx:
+        d_idx = min(len(stops) - 1, o_idx + 1)
+
+    origin_offset = stops[o_idx]["min"]
+    dest_offset = stops[d_idx]["min"]
+    travel_min = max(2, dest_offset - origin_offset)
+
+    now_min = now_dt.hour * 60 + now_dt.minute
+
+    # 내 정류장 통과 예정 시각 기준 남은 차 계산
+    stop_arr_mins = [dm + origin_offset for dm in dep_mins]
+    future_indices = [i for i, am in enumerate(stop_arr_mins) if am >= now_min]
+    remaining_count = len(future_indices)
+
+    if future_indices:
+        next_i = future_indices[0]
+        next_dep_min = dep_mins[next_i]
+        next_arr_min = stop_arr_mins[next_i]
+        wait_min = max(1, next_arr_min - now_min)
+        is_ended = False
+    else:
+        next_i = 0
+        next_dep_min = dep_mins[0] + 24 * 60
+        next_arr_min = stop_arr_mins[0] + 24 * 60
+        wait_min = next_arr_min - now_min
+        is_ended = True
+
+    # 현재 도로 위 주행 중인 34번 차량 위치 추적 (이미 기점을 출발해 내 정류장으로 오는 중인지 확인)
+    elapsed_since_dep = now_min - next_dep_min
+    if not is_ended and elapsed_since_dep >= 0:
+        cur_idx = 0
+        for idx_s, s_obj in enumerate(stops):
+            if s_obj["min"] <= elapsed_since_dep:
+                cur_idx = idx_s
+        cur_stop_label = f"{stops[cur_idx]['name']} 부근 주행 중"
+        stops_away = max(0, o_idx - cur_idx)
+    elif not is_ended:
+        # 아직 기점 출발 전이면 직전 출발 차량 위치 또는 기점 대기 안내
+        cur_idx = 0
+        mins_to_start = next_dep_min - now_min
+        cur_stop_label = f"{stops[0]['name']} 출발 대기 ({min_to_hhmm(next_dep_min)} 발)"
+        stops_away = o_idx
+    else:
+        cur_idx = 0
+        cur_stop_label = "금일 운행 종료 (내일 06:00 첫차)"
+        stops_away = None
+
+    if is_ended:
+        lb_level = "ended"
+        lb_text = "🌙 금일 운행 종료 (내일 첫차 06:00)"
+    elif remaining_count == 1:
+        lb_level = "last"
+        lb_text = "🚨 오늘 마지막 34번 막차!"
+    elif remaining_count == 2:
+        lb_level = "penultimate"
+        lb_text = "⏰ 막차 1대 전 (남은 2회)"
+    else:
+        lb_level = "ok"
+        lb_text = f"오늘 남은 운행 {remaining_count}회 (막차 22:00)"
+
+    return {
+        "direction_label": "금산(복수·진산·대둔산) 방면" if is_to_daedun else "대전(안영동·산성동·서남부터미널) 방면",
+        "start_terminal": "서남부터미널" if is_to_daedun else "대둔산휴게소",
+        "stops": stops,
+        "dep_times": dep_times,
+        "o_idx": o_idx,
+        "d_idx": d_idx,
+        "cur_idx": cur_idx,
+        "cur_stop_label": cur_stop_label,
+        "stops_away": stops_away,
+        "wait_min": wait_min,
+        "travel_min": travel_min,
+        "next_dep_str": min_to_hhmm(next_dep_min),
+        "next_arr_str": min_to_hhmm(next_arr_min),
+        "dest_arr_str": min_to_hhmm(next_arr_min + travel_min),
+        "lb_level": lb_level,
+        "lb_text": lb_text,
+        "is_ended": is_ended,
+    }
+
+
+# =============================================================================
 # 세션 상태(Session State) 초기화 및 입력 통제 · 즐겨찾기 · 더보기 토글 콜백
 # =============================================================================
+
+APP_SECTION_GEUMSAN = "🔵 금산 군내 · 공공형 버스"
+APP_SECTION_DJ34 = "🟢 대전 34번 외곽버스 (전용)"
 
 MODE_MAP = "🚦 노선 지도 · 정체"
 MODE_WAIT = "⏳ 대기시간"
@@ -2930,6 +3169,8 @@ MODE_ETA = "🧭 이동시간 예측"
 MODE_TIME = "📅 시간표"
 ALL_MODES = [MODE_MAP, MODE_WAIT, MODE_ETA, MODE_TIME]
 
+if "app_section" not in st.session_state:
+    st.session_state.app_section = APP_SECTION_GEUMSAN
 if "origin_stop" not in st.session_state:
     st.session_state.origin_stop = None
 if "dest_stop" not in st.session_state:
@@ -2947,6 +3188,14 @@ if "favorites" not in st.session_state:
 if "fav_notice" not in st.session_state:
     st.session_state.fav_notice = None
 
+# 대전 34번 전용 상태값
+if "dj34_dir" not in st.session_state:
+    st.session_state.dj34_dir = "to_daejeon"
+if "dj34_origin" not in st.session_state:
+    st.session_state.dj34_origin = "진산"
+if "dj34_dest" not in st.session_state:
+    st.session_state.dj34_dest = "서남부터미널종점"
+
 # 상세 정보는 버튼을 눌렀을 때만 보이도록 토글 상태 관리
 for _toggle_key in (
     "show_route_stops",
@@ -2954,6 +3203,8 @@ for _toggle_key in (
     "show_other_buses",
     "show_eta_table",
     "show_all_timetables",
+    "show_dj34_all_stops",
+    "show_dj34_full_table",
 ):
     if _toggle_key not in st.session_state:
         st.session_state[_toggle_key] = False
@@ -2967,8 +3218,24 @@ def set_active_mode(mode_name: str):
     st.session_state.active_mode = mode_name
 
 
+def switch_app_section(sec_name: str):
+    st.session_state.app_section = sec_name
+    st.session_state.app_section_radio = sec_name
+
+
+def apply_dj34_preset(dir_key: str, origin_name: str, dest_name: str):
+    """대전 34번 자주 타는 구간 원터치 설정"""
+    st.session_state.app_section = APP_SECTION_DJ34
+    st.session_state.app_section_radio = APP_SECTION_DJ34
+    st.session_state.dj34_dir = dir_key
+    st.session_state.dj34_origin = origin_name
+    st.session_state.dj34_dest = dest_name
+
+
 def apply_preset(origin: str, dest: str, bno: str | None):
     """대표 구간 및 즐겨찾기 원터치 적용"""
+    st.session_state.app_section = APP_SECTION_GEUMSAN
+    st.session_state.app_section_radio = APP_SECTION_GEUMSAN
     st.session_state.origin_stop = origin
     st.session_state.dest_stop = dest
     if bno:
@@ -3067,7 +3334,7 @@ def restore_default_favorites():
 
 
 # =============================================================================
-# 깔끔하고 정돈된 지도 앱 스타일 CSS
+# 깔끔하고 정돈된 지도 앱 스타일 CSS (금산 파란색 테마 + 대전 34번 초록색 테마)
 # =============================================================================
 
 font_scale = "1.12rem" if st.session_state.large_font else "1.0rem"
@@ -3112,7 +3379,7 @@ section[data-testid="stSidebar"] {{
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
 }}
 .slim-title {{
-    font-size: 1.18rem;
+    font-size: 1.16rem;
     font-weight: 800;
     color: #0F172A;
     white-space: nowrap;
@@ -3148,7 +3415,7 @@ section[data-testid="stSidebar"] {{
     0%   {{ left: 30px; }}
     100% {{ left: calc(100% - 62px); }}
 }}
-/* 최상단 핵심 도착 전광판 (밝고 깨끗한 고대비 카드) */
+/* 최상단 핵심 도착 전광판 (금산 파란색 / 대전34번 초록색) */
 .top-board {{
     background: #FFFFFF;
     border: 2px solid #2563EB;
@@ -3156,6 +3423,14 @@ section[data-testid="stSidebar"] {{
     padding: 18px 22px;
     margin-bottom: 8px;
     box-shadow: 0 6px 20px rgba(37, 99, 235, 0.08);
+}}
+.top-board-dj34 {{
+    background: #FFFFFF;
+    border: 2.5px solid #4D9A2A;
+    border-radius: 20px;
+    padding: 18px 22px;
+    margin-bottom: 8px;
+    box-shadow: 0 6px 20px rgba(77, 154, 42, 0.11);
 }}
 .top-board-head {{
     display: flex;
@@ -3174,6 +3449,14 @@ section[data-testid="stSidebar"] {{
     border-radius: 999px;
     font-weight: 800;
     font-size: 1.02rem;
+}}
+.bus-badge-dj34 {{
+    background: #4D9A2A;
+    color: #FFFFFF;
+    padding: 5px 15px;
+    border-radius: 999px;
+    font-weight: 900;
+    font-size: 1.04rem;
 }}
 .route-title-text {{
     font-size: 1.08rem;
@@ -3235,7 +3518,7 @@ section[data-testid="stSidebar"] {{
 .summary-val-green {{
     font-size: {big_num_size};
     font-weight: 900;
-    color: #059669;
+    color: #3D8B1F;
     line-height: 1.2;
 }}
 .summary-sub {{
@@ -3244,7 +3527,7 @@ section[data-testid="stSidebar"] {{
     margin-top: 4px;
     font-weight: 600;
 }}
-/* 빈 안내 카드 */
+/* 빈 안내 카드 & 흰색 카드 */
 .welcome-card {{
     background: #FFFFFF;
     border: 1.5px solid #DBEAFE;
@@ -3253,7 +3536,6 @@ section[data-testid="stSidebar"] {{
     margin-bottom: 10px;
     text-align: center;
 }}
-/* 깔끔한 흰색 콘텐츠 카드 */
 .clean-card {{
     background: #FFFFFF;
     border: 1px solid #E2E8F0;
@@ -3272,6 +3554,7 @@ section[data-testid="stSidebar"] {{
 }}
 .time-past {{ background: #F1F5F9; color: #94A3B8; }}
 .time-next {{ background: #2563EB; color: #FFFFFF; box-shadow: 0 2px 8px rgba(37,99,235,0.28); }}
+.time-next-dj34 {{ background: #4D9A2A; color: #FFFFFF; box-shadow: 0 2px 8px rgba(77,154,42,0.32); }}
 .time-future {{ background: #F8FAFC; color: #1E293B; border: 1px solid #CBD5E1; }}
 .time-last {{ background: #FEF2F2; color: #DC2626; border: 1.5px solid #FCA5A5; }}
 .cong-chip {{
@@ -3289,196 +3572,307 @@ section[data-testid="stSidebar"] {{
 
 
 # =============================================================================
-# [좌측 사이드바] 지도 앱 스타일 길찾기 메뉴 (정류장 입력 · 추천 · 즐겨찾기 · 설정)
+# [좌측 사이드바] 지도 앱 스타일 메뉴 (상단에서 '금산 군내버스' ↔ '대전 34번' 즉시 전환!)
 # =============================================================================
 
 all_stops = get_sorted_stop_options()
 
 with st.sidebar:
-    st.markdown("### 🧭 금산 버스 길찾기")
-    st.caption("출발지 ➔ 도착지 ➔ 버스 순서로 선택하세요")
+    st.markdown("### 🚏 버스 안내 메뉴")
 
-    # 1단계: 출발 정류장
-    s1_options = [None] + all_stops
-    cur_origin = st.session_state.origin_stop
-    s1_idx = s1_options.index(cur_origin) if cur_origin in s1_options else 0
-    selected_origin = st.selectbox(
-        "1️⃣ 출발 정류장",
-        options=s1_options,
-        index=s1_idx,
-        format_func=lambda x: "출발지를 선택하세요" if x is None else format_stop_label(x),
+    # 맨 위에서 1초 만에 구분되는 2개 전용 탭 스위치!
+    if "app_section_radio" not in st.session_state:
+        st.session_state.app_section_radio = st.session_state.app_section
+    sec_choice = st.radio(
+        "안내 구분 선택",
+        options=[APP_SECTION_GEUMSAN, APP_SECTION_DJ34],
+        key="app_section_radio",
+        label_visibility="collapsed",
     )
-    if selected_origin != st.session_state.origin_stop:
-        st.session_state.origin_stop = selected_origin
-        if st.session_state.dest_stop == selected_origin:
-            st.session_state.dest_stop = None
-            st.session_state.bus_no = None
+    if sec_choice != st.session_state.app_section:
+        st.session_state.app_section = sec_choice
         st.rerun()
 
-    # 2단계: 도착 정류장 (1단계 전 잠금)
-    if st.session_state.origin_stop is None:
-        st.selectbox(
-            "2️⃣ 도착 정류장",
-            options=["🔒 출발지를 먼저 선택하세요"],
-            disabled=True,
+    st.divider()
+
+    # -------------------------------------------------------------------------
+    # (A) 금산 군내 · 공공형 버스 선택 시 사이드바 메뉴
+    # -------------------------------------------------------------------------
+    if st.session_state.app_section == APP_SECTION_GEUMSAN:
+        st.markdown('<div class="sb-section-title">🧭 금산 버스 길찾기</div>', unsafe_allow_html=True)
+
+        # 1단계: 출발 정류장
+        s1_options = [None] + all_stops
+        cur_origin = st.session_state.origin_stop
+        s1_idx = s1_options.index(cur_origin) if cur_origin in s1_options else 0
+        selected_origin = st.selectbox(
+            "1️⃣ 출발 정류장",
+            options=s1_options,
+            index=s1_idx,
+            format_func=lambda x: "출발지를 선택하세요" if x is None else format_stop_label(x),
         )
-    else:
-        direct_reach = get_directly_reachable_stops(st.session_state.origin_stop)
-        direct_list = [s for s in all_stops if s != st.session_state.origin_stop and s in direct_reach]
-        transfer_list = [s for s in all_stops if s != st.session_state.origin_stop and s not in direct_reach]
-        s2_options = [None] + direct_list + transfer_list
-        cur_dest = st.session_state.dest_stop
-        s2_idx = s2_options.index(cur_dest) if cur_dest in s2_options else 0
-        selected_dest = st.selectbox(
-            "2️⃣ 도착 정류장",
-            options=s2_options,
-            index=s2_idx,
-            format_func=lambda x: "목적지를 선택하세요" if x is None else format_stop_label(x, direct_reach),
-        )
-        if selected_dest != st.session_state.dest_stop:
-            st.session_state.dest_stop = selected_dest
-            # 직통 버스가 1개 이상 있으면 아직 버스 미선택 시 자동으로 가장 빠른 직통 후보를 세팅하지 않고 3단계 해제 유지 (또는 기존 노선이 안 맞으면 초기화)
-            if st.session_state.bus_no and selected_dest is None:
+        if selected_origin != st.session_state.origin_stop:
+            st.session_state.origin_stop = selected_origin
+            if st.session_state.dest_stop == selected_origin:
+                st.session_state.dest_stop = None
                 st.session_state.bus_no = None
             st.rerun()
 
-    # 3단계: 버스 번호 (2단계 전 잠금)
-    if st.session_state.origin_stop is None or st.session_state.dest_stop is None:
-        st.selectbox(
-            "3️⃣ 버스 번호",
-            options=["🔒 도착지를 먼저 선택하세요"],
-            disabled=True,
+        # 2단계: 도착 정류장 (1단계 전 잠금)
+        if st.session_state.origin_stop is None:
+            st.selectbox(
+                "2️⃣ 도착 정류장",
+                options=["🔒 출발지를 먼저 선택하세요"],
+                disabled=True,
+            )
+        else:
+            direct_reach = get_directly_reachable_stops(st.session_state.origin_stop)
+            direct_list = [s for s in all_stops if s != st.session_state.origin_stop and s in direct_reach]
+            transfer_list = [s for s in all_stops if s != st.session_state.origin_stop and s not in direct_reach]
+            s2_options = [None] + direct_list + transfer_list
+            cur_dest = st.session_state.dest_stop
+            s2_idx = s2_options.index(cur_dest) if cur_dest in s2_options else 0
+            selected_dest = st.selectbox(
+                "2️⃣ 도착 정류장",
+                options=s2_options,
+                index=s2_idx,
+                format_func=lambda x: "목적지를 선택하세요" if x is None else format_stop_label(x, direct_reach),
+            )
+            if selected_dest != st.session_state.dest_stop:
+                st.session_state.dest_stop = selected_dest
+                if st.session_state.bus_no and selected_dest is None:
+                    st.session_state.bus_no = None
+                st.rerun()
+
+        # 3단계: 버스 번호 (2단계 전 잠금)
+        if st.session_state.origin_stop is None or st.session_state.dest_stop is None:
+            st.selectbox(
+                "3️⃣ 버스 번호",
+                options=["🔒 도착지를 먼저 선택하세요"],
+                disabled=True,
+            )
+        else:
+            direct_candidates = find_direct_buses(st.session_state.origin_stop, st.session_state.dest_stop)
+            direct_bnos = [d["bus_no"] for d in direct_candidates]
+            origin_bnos = [
+                b for b, inf in BUS_ROUTES.items()
+                if (st.session_state.origin_stop in inf["stops"]) and (b not in direct_bnos)
+            ]
+            other_bnos = [
+                b for b in sorted(BUS_ROUTES.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+                if b not in direct_bnos and b not in origin_bnos
+            ]
+            s3_options = [None] + direct_bnos + origin_bnos + other_bnos
+
+            def fmt_bus_option(b):
+                if b is None:
+                    return "버스 번호 선택 (모르면 아래 추천 클릭)"
+                inf = BUS_ROUTES[b]
+                if b in direct_bnos:
+                    return f"⭐ {b}번 [직통] · {inf['region']}"
+                if b in origin_bnos:
+                    return f"🔹 {b}번 [정차] · {inf['region']}"
+                return f"⚪ {b}번 · {inf['region']}"
+
+            cur_bus = st.session_state.bus_no
+            s3_idx = s3_options.index(cur_bus) if cur_bus in s3_options else 0
+            selected_bus = st.selectbox(
+                "3️⃣ 버스 번호",
+                options=s3_options,
+                index=s3_idx,
+                format_func=fmt_bus_option,
+            )
+            if selected_bus != st.session_state.bus_no:
+                st.session_state.bus_no = selected_bus
+                st.session_state.show_recommend = False
+                st.rerun()
+
+        rec_btn_label = (
+            "✕ 추천 버스 목록 닫기"
+            if st.session_state.show_recommend
+            else "🎯 목적지행 버스 추천받기"
         )
-    else:
-        direct_candidates = find_direct_buses(st.session_state.origin_stop, st.session_state.dest_stop)
-        direct_bnos = [d["bus_no"] for d in direct_candidates]
-        origin_bnos = [
-            b for b, inf in BUS_ROUTES.items()
-            if (st.session_state.origin_stop in inf["stops"]) and (b not in direct_bnos)
-        ]
-        other_bnos = [
-            b for b in sorted(BUS_ROUTES.keys(), key=lambda x: int(x) if x.isdigit() else 999)
-            if b not in direct_bnos and b not in origin_bnos
-        ]
-        s3_options = [None] + direct_bnos + origin_bnos + other_bnos
-
-        def fmt_bus_option(b):
-            if b is None:
-                return "버스 번호 선택 (모르면 아래 추천 클릭)"
-            inf = BUS_ROUTES[b]
-            if b in direct_bnos:
-                return f"⭐ {b}번 [직통] · {inf['region']}"
-            if b in origin_bnos:
-                return f"🔹 {b}번 [정차] · {inf['region']}"
-            return f"⚪ {b}번 · {inf['region']}"
-
-        cur_bus = st.session_state.bus_no
-        s3_idx = s3_options.index(cur_bus) if cur_bus in s3_options else 0
-        selected_bus = st.selectbox(
-            "3️⃣ 버스 번호",
-            options=s3_options,
-            index=s3_idx,
-            format_func=fmt_bus_option,
-        )
-        if selected_bus != st.session_state.bus_no:
-            st.session_state.bus_no = selected_bus
-            st.session_state.show_recommend = False
-            st.rerun()
-
-    # 목적지행 버스 추천 버튼 + 출발↔도착 / 초기화
-    rec_btn_label = (
-        "✕ 추천 버스 목록 닫기"
-        if st.session_state.show_recommend
-        else "🎯 목적지행 버스 추천받기"
-    )
-    st.button(
-        rec_btn_label,
-        type="primary",
-        disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
-        on_click=toggle_recommend_panel,
-        **STRETCH_KW,
-    )
-
-    sb_c1, sb_c2 = st.columns(2)
-    with sb_c1:
         st.button(
-            "🔄 출발↔도착",
+            rec_btn_label,
+            type="primary",
             disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
-            on_click=swap_origin_dest,
+            on_click=toggle_recommend_panel,
             **STRETCH_KW,
         )
-    with sb_c2:
-        st.button("🧹 초기화", on_click=reset_all_inputs, **STRETCH_KW)
 
-    st.divider()
-
-    # ⭐ 자주 타는 구간 즐겨찾기 (클릭 한 번으로 바로 적용, 편집은 팝오버 버튼 안에 숨김)
-    st.markdown('<div class="sb-section-title">⭐ 자주 타는 구간</div>', unsafe_allow_html=True)
-    if st.session_state.favorites:
-        for idx_f, fav_item in enumerate(st.session_state.favorites):
-            is_active_fav = (
-                st.session_state.origin_stop == fav_item["origin"]
-                and st.session_state.dest_stop == fav_item["dest"]
-                and (fav_item.get("bus_no") is None or st.session_state.bus_no == fav_item.get("bus_no"))
-            )
+        sb_c1, sb_c2 = st.columns(2)
+        with sb_c1:
             st.button(
-                fav_item["label"],
-                key=f"sb_fav_{idx_f}_{fav_item['origin']}_{fav_item['dest']}_{fav_item.get('bus_no')}",
-                type="primary" if is_active_fav else "secondary",
-                on_click=apply_preset,
-                args=(fav_item["origin"], fav_item["dest"], fav_item.get("bus_no")),
+                "🔄 출발↔도착",
+                disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
+                on_click=swap_origin_dest,
                 **STRETCH_KW,
             )
-    else:
-        st.caption("저장된 즐겨찾기가 없습니다.")
+        with sb_c2:
+            st.button("🧹 초기화", on_click=reset_all_inputs, **STRETCH_KW)
 
-    effective_fav_bus = st.session_state.bus_no
-    if not effective_fav_bus and st.session_state.origin_stop and st.session_state.dest_stop:
-        _d_list = find_direct_buses(st.session_state.origin_stop, st.session_state.dest_stop)
-        if _d_list:
-            effective_fav_bus = _d_list[0]["bus_no"]
-    is_already_fav = (
-        _find_matching_fav_idx(st.session_state.origin_stop, st.session_state.dest_stop, effective_fav_bus) is not None
-    )
+        st.divider()
 
-    fav_b1, fav_b2 = st.columns([1.35, 1.0])
-    with fav_b1:
-        st.button(
-            "💛 저장됨(해제)" if is_already_fav else "⭐ 현재 구간 저장",
-            disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
-            on_click=toggle_current_favorite,
-            **STRETCH_KW,
+        # ⭐ 자주 타는 구간 즐겨찾기
+        st.markdown('<div class="sb-section-title">⭐ 자주 타는 구간</div>', unsafe_allow_html=True)
+        if st.session_state.favorites:
+            for idx_f, fav_item in enumerate(st.session_state.favorites):
+                is_active_fav = (
+                    st.session_state.origin_stop == fav_item["origin"]
+                    and st.session_state.dest_stop == fav_item["dest"]
+                    and (fav_item.get("bus_no") is None or st.session_state.bus_no == fav_item.get("bus_no"))
+                )
+                st.button(
+                    fav_item["label"],
+                    key=f"sb_fav_{idx_f}_{fav_item['origin']}_{fav_item['dest']}_{fav_item.get('bus_no')}",
+                    type="primary" if is_active_fav else "secondary",
+                    on_click=apply_preset,
+                    args=(fav_item["origin"], fav_item["dest"], fav_item.get("bus_no")),
+                    **STRETCH_KW,
+                )
+        else:
+            st.caption("저장된 즐겨찾기가 없습니다.")
+
+        effective_fav_bus = st.session_state.bus_no
+        if not effective_fav_bus and st.session_state.origin_stop and st.session_state.dest_stop:
+            _d_list = find_direct_buses(st.session_state.origin_stop, st.session_state.dest_stop)
+            if _d_list:
+                effective_fav_bus = _d_list[0]["bus_no"]
+        is_already_fav = (
+            _find_matching_fav_idx(st.session_state.origin_stop, st.session_state.dest_stop, effective_fav_bus) is not None
         )
-    with fav_b2:
-        _fav_mgr = st.popover("✏️ 편집", **STRETCH_KW) if hasattr(st, "popover") else st.expander("✏️ 편집")
-        with _fav_mgr:
-            custom_fav_name = st.text_input(
-                "별칭으로 저장",
-                placeholder="예: 우리집 ➔ 장터",
-                key="custom_fav_alias_input",
-            )
+
+        fav_b1, fav_b2 = st.columns([1.35, 1.0])
+        with fav_b1:
             st.button(
-                "➕ 별칭 등록",
+                "💛 저장됨(해제)" if is_already_fav else "⭐ 현재 구간 저장",
                 disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
                 on_click=toggle_current_favorite,
-                args=(custom_fav_name,),
                 **STRETCH_KW,
             )
-            if st.session_state.favorites:
-                st.caption("목록 삭제:")
-                for idx_f, f_obj in enumerate(st.session_state.favorites):
-                    dc1, dc2 = st.columns([3.2, 1.2])
-                    dc1.caption(f"{f_obj['origin']}➔{f_obj['dest']}")
-                    dc2.button("삭제", key=f"del_fav_{idx_f}", on_click=delete_favorite_at, args=(idx_f,))
-            st.button("기본 목록 복원", on_click=restore_default_favorites, **STRETCH_KW)
+        with fav_b2:
+            _fav_mgr = st.popover("✏️ 편집", **STRETCH_KW) if hasattr(st, "popover") else st.expander("✏️ 편집")
+            with _fav_mgr:
+                custom_fav_name = st.text_input(
+                    "별칭으로 저장",
+                    placeholder="예: 우리집 ➔ 장터",
+                    key="custom_fav_alias_input",
+                )
+                st.button(
+                    "➕ 별칭 등록",
+                    disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
+                    on_click=toggle_current_favorite,
+                    args=(custom_fav_name,),
+                    **STRETCH_KW,
+                )
+                if st.session_state.favorites:
+                    st.caption("목록 삭제:")
+                    for idx_f, f_obj in enumerate(st.session_state.favorites):
+                        dc1, dc2 = st.columns([3.2, 1.2])
+                        dc1.caption(f"{f_obj['origin']}➔{f_obj['dest']}")
+                        dc2.button("삭제", key=f"del_fav_{idx_f}", on_click=delete_favorite_at, args=(idx_f,))
+                st.button("기본 목록 복원", on_click=restore_default_favorites, **STRETCH_KW)
 
-    if st.session_state.fav_notice:
-        st.caption(f"✅ {st.session_state.fav_notice}")
-        st.session_state.fav_notice = None
+        if st.session_state.fav_notice:
+            st.caption(f"✅ {st.session_state.fav_notice}")
+            st.session_state.fav_notice = None
+
+    # -------------------------------------------------------------------------
+    # (B) 대전 34번 외곽버스 전용 탭 선택 시 사이드바 메뉴
+    # -------------------------------------------------------------------------
+    else:
+        st.markdown('<div class="sb-section-title">🟢 대전 34번 구간 선택</div>', unsafe_allow_html=True)
+        st.caption("서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소")
+
+        dir_choice = st.radio(
+            "운행 방향",
+            options=["to_daejeon", "to_daedun"],
+            index=0 if st.session_state.dj34_dir == "to_daejeon" else 1,
+            format_func=lambda k: (
+                "⬆️ 대전(서남부터미널) 가는 길"
+                if k == "to_daejeon"
+                else "⬇️ 금산(복수·진산·대둔산) 오는 길"
+            ),
+        )
+        if dir_choice != st.session_state.dj34_dir:
+            st.session_state.dj34_dir = dir_choice
+            if dir_choice == "to_daejeon":
+                st.session_state.dj34_origin = "진산"
+                st.session_state.dj34_dest = "서남부터미널종점"
+            else:
+                st.session_state.dj34_origin = "대전서남부터미널"
+                st.session_state.dj34_dest = "진산"
+            st.rerun()
+
+        cur_stops_34 = (
+            DAEJEON_34_STOPS_TO_DAEDUN
+            if st.session_state.dj34_dir == "to_daedun"
+            else DAEJEON_34_STOPS_TO_DAEJEON
+        )
+        stop_names_34 = [s["name"] for s in cur_stops_34]
+        stop_map_34 = {s["name"]: s for s in cur_stops_34}
+
+        # 승차 정류장 (마지막 종점 제외)
+        board_opts = stop_names_34[:-1]
+        o34_idx = board_opts.index(st.session_state.dj34_origin) if st.session_state.dj34_origin in board_opts else 0
+        sel_o34 = st.selectbox(
+            "1️⃣ 타는 정류장",
+            options=board_opts,
+            index=o34_idx,
+            format_func=lambda nm: f"{'⭐ ' if stop_map_34[nm]['hub'] else ''}{nm} ({stop_map_34[nm]['zone']})",
+        )
+        if sel_o34 != st.session_state.dj34_origin:
+            st.session_state.dj34_origin = sel_o34
+            st.rerun()
+
+        # 하차 정류장 (승차 이후 정류장만 자동 필터링)
+        after_idx = stop_names_34.index(st.session_state.dj34_origin) + 1
+        alight_opts = stop_names_34[after_idx:]
+        d34_idx = (
+            alight_opts.index(st.session_state.dj34_dest)
+            if st.session_state.dj34_dest in alight_opts
+            else len(alight_opts) - 1
+        )
+        sel_d34 = st.selectbox(
+            "2️⃣ 내리는 정류장",
+            options=alight_opts,
+            index=d34_idx,
+            format_func=lambda nm: f"{'🏁 ' if stop_map_34[nm]['hub'] else ''}{nm} ({stop_map_34[nm]['zone']})",
+        )
+        if sel_d34 != st.session_state.dj34_dest:
+            st.session_state.dj34_dest = sel_d34
+            st.rerun()
+
+        st.divider()
+        st.markdown('<div class="sb-section-title">⚡ 자주 타는 34번 구간</div>', unsafe_allow_html=True)
+        st.button(
+            "🟢 진산 ➔ 대전 서남부터미널",
+            on_click=apply_dj34_preset,
+            args=("to_daejeon", "진산", "서남부터미널종점"),
+            **STRETCH_KW,
+        )
+        st.button(
+            "🟢 복수면사무소 ➔ 대전 서남부터미널",
+            on_click=apply_dj34_preset,
+            args=("to_daejeon", "복수면사무소", "서남부터미널종점"),
+            **STRETCH_KW,
+        )
+        st.button(
+            "🟢 대전서남부터미널 ➔ 복수면사무소",
+            on_click=apply_dj34_preset,
+            args=("to_daedun", "대전서남부터미널", "복수면사무소"),
+            **STRETCH_KW,
+        )
+        st.button(
+            "🟢 대전서남부터미널 ➔ 진산·대둔산",
+            on_click=apply_dj34_preset,
+            args=("to_daedun", "대전서남부터미널", "진산"),
+            **STRETCH_KW,
+        )
 
     st.divider()
 
-    # ⚙️ 화면 크기 및 시뮬레이션 설정 (평소에는 숨겨두고 버튼을 눌러야 열림)
+    # 공통 하단: 큰 글씨 모드 + 시각 테스트 팝오버
     st.session_state.large_font = st.toggle(
         "🔍 큰 글씨 모드",
         value=st.session_state.large_font,
@@ -3515,11 +3909,247 @@ with st.sidebar:
 
 
 # =============================================================================
-# [메인 화면 최상단] 슬림 움직이는 버스 트랙 + 한눈에 보는 3칸 도착 전광판
+# [메인 화면 1] 🟢 대전광역시 외곽버스 34번 전용 안내 화면
 # =============================================================================
+if st.session_state.app_section == APP_SECTION_DJ34:
+    st.markdown(
+        f"""
+<div class="slim-header" style="border-color:#86EFAC; background:#F0FDF4;">
+  <div class="slim-title" style="color:#14532D;">🟢 대전 외곽버스 34번 전용 안내 (서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산)</div>
+  <div class="road-mini" style="background:#DCFCE7; border-color:#86EFAC;">
+    <div class="road-mini-line" style="border-color:#4ADE80;"></div>
+    <span class="road-pin-l">🏙️</span>
+    <div class="moving-bus"><span class="bus-flip">🚌</span>💨</div>
+    <span class="road-pin-r">⛰️</span>
+  </div>
+  <div style="font-size:0.82rem; color:#166534; font-weight:800;">🕒 {now_dt.strftime('%H:%M')} 기준</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
-st.markdown(
-    f"""
+    dj_stat = analyze_daejeon_34(
+        st.session_state.dj34_dir,
+        st.session_state.dj34_origin,
+        st.session_state.dj34_dest,
+        now_dt,
+    )
+
+    lb_cls_34 = (
+        "lb-last"
+        if dj_stat["lb_level"] == "last"
+        else ("lb-ended" if dj_stat["lb_level"] == "ended" else ("lb-warn" if dj_stat["lb_level"] == "penultimate" else "lb-ok"))
+    )
+
+    wait_sub_34 = (
+        f"내일 첫차 {dj_stat['next_arr_str']} 도착 예정"
+        if dj_stat["is_ended"]
+        else (
+            f"곧 도착 ({dj_stat['next_arr_str']} 예정)"
+            if dj_stat["stops_away"] == 0
+            else f"{dj_stat['stops_away']}정거장 전 · {dj_stat['next_arr_str']} 승차 예정"
+        )
+    )
+
+    alert_34 = ""
+    if dj_stat["lb_level"] == "last":
+        alert_34 = (
+            "<div style='background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;"
+            "border-radius:12px;padding:8px 14px;margin-bottom:12px;font-weight:800;font-size:0.9rem;'>"
+            "🚨 오늘 마지막 34번 버스(막차)입니다! 기점 22:00 출발 차량이니 놓치지 마세요.</div>"
+        )
+    elif dj_stat["lb_level"] == "ended":
+        alert_34 = (
+            "<div style='background:#F1F5F9;border:1px solid #CBD5E1;color:#334155;"
+            "border-radius:12px;padding:8px 14px;margin-bottom:12px;font-weight:700;font-size:0.9rem;'>"
+            "🌙 오늘 34번 운행이 종료되었습니다. 내일 첫차는 양방향 모두 06:00에 출발합니다.</div>"
+        )
+
+    # 1) 최상단 3칸 핵심 도착 전광판 (대전 외곽버스 초록색 테마)
+    st.markdown(
+        f"""
+<div class="top-board-dj34">
+  <div class="top-board-head">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <span class="bus-badge-dj34">🟢 대전 34번</span>
+      <span class="route-title-text">{html.escape(st.session_state.dj34_origin)} ➔ {html.escape(st.session_state.dj34_dest)}</span>
+      <span style="font-size:0.86rem; color:#15803D; font-weight:700;">({dj_stat['direction_label']})</span>
+    </div>
+    <span class="{lb_cls_34}">{html.escape(dj_stat['lb_text'])}</span>
+  </div>
+  {alert_34}
+  <div class="summary-3grid">
+    <div class="summary-box">
+      <div class="summary-label">📍 지금 34번 버스 위치</div>
+      <div class="summary-val-dark" style="font-size:1.45rem;">{html.escape(dj_stat['cur_stop_label'])}</div>
+      <div class="summary-sub">{dj_stat['start_terminal']} {dj_stat['next_dep_str']} 출발 배차</div>
+    </div>
+    <div class="summary-box" style="background:#F0FDF4; border-color:#86EFAC;">
+      <div class="summary-label" style="color:#15803D;">⏱️ 내 정류장({html.escape(st.session_state.dj34_origin)}) 도착</div>
+      <div class="summary-val-green">약 {dj_stat['wait_min']}분 후</div>
+      <div class="summary-sub">{wait_sub_34}</div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-label">🏁 목적지({html.escape(st.session_state.dj34_dest)})까지</div>
+      <div class="summary-val-blue">약 {dj_stat['travel_min']}분</div>
+      <div class="summary-sub">{dj_stat['dest_arr_str']} 하차 예정 · 배차 40~55분</div>
+    </div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    # 음성 안내(TTS) + 금산 군내버스로 돌아가기 버튼
+    tts_34 = (
+        f"대전 외곽버스 34번 안내입니다. {dj_stat['direction_label']} 버스는 현재 {dj_stat['cur_stop_label']}이며, "
+        f"{st.session_state.dj34_origin} 정류장에 약 {dj_stat['wait_min']}분 뒤인 {dj_stat['next_arr_str']}에 도착할 예정입니다. "
+        f"탑승 후 {st.session_state.dj34_dest}까지는 약 {dj_stat['travel_min']}분 소요됩니다. {dj_stat['lb_text']}."
+    )
+    act34_1, act34_2 = st.columns([3.2, 1.3])
+    with act34_1:
+        render_tts_voice_bar(tts_34)
+    with act34_2:
+        st.button(
+            "🔵 금산 군내버스로 전환",
+            on_click=switch_app_section,
+            args=(APP_SECTION_GEUMSAN,),
+            **STRETCH_KW,
+        )
+
+    # 2) 한눈에 보는 34번 공식 출발 시간표 (일 22회 · 다음차 초록색 하이라이트)
+    now_m_34 = now_dt.hour * 60 + now_dt.minute
+
+    def _chips_34(col_key: str) -> str:
+        out_html = []
+        marked = False
+        for idx_r, row in enumerate(DAEJEON_34_TIMETABLE):
+            tm_str = row[col_key]
+            tm_val = parse_hhmm_to_min(tm_str)
+            is_last = idx_r == len(DAEJEON_34_TIMETABLE) - 1
+            if tm_val >= now_m_34 and not marked:
+                marked = True
+                tag = " · 막차" if is_last else " · 다음차"
+                out_html.append(f"<span class='time-chip time-next-dj34'>🚌 {tm_str}{tag}</span>")
+            elif tm_val < now_m_34:
+                out_html.append(f"<span class='time-chip time-past'>{tm_str}</span>")
+            elif is_last:
+                out_html.append(f"<span class='time-chip time-last'>{tm_str} (막차)</span>")
+            else:
+                out_html.append(f"<span class='time-chip time-future'>{tm_str}</span>")
+        return "".join(out_html)
+
+    st.markdown(
+        f"""
+<div class="clean-card" style="margin-top:8px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+    <span style="font-size:1.08rem;font-weight:800;color:#14532D;">🕒 대전 외곽버스 34번 공식 시간표 (일 22회 · 40~55분 간격)</span>
+    <span style="font-size:0.84rem;color:#64748B;">{DAEJEON_34_META['basis_date']} · 운수사: {DAEJEON_34_META['operator']}</span>
+  </div>
+  <div style="margin-bottom:14px;">
+    <div style="font-size:0.92rem;font-weight:800;color:#166534;margin-bottom:4px;">⬇️ 대전 서남부터미널 출발 (복수 · 진산 · 대둔산휴게소 방면)</div>
+    <div>{_chips_34('seonambu')}</div>
+  </div>
+  <div>
+    <div style="font-size:0.92rem;font-weight:800;color:#166534;margin-bottom:4px;">⬆️ 금산 대둔산휴게소 출발 (진산 · 복수 · 대전 서남부터미널 방면)</div>
+    <div>{_chips_34('daedunsan')}</div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    # 3) 주요 거점 요약 노선도 (한 줄에 깔끔하게!)
+    core_hubs_34 = [
+        "대전서남부터미널",
+        "산성초교",
+        "한빛고교",
+        "구만리",
+        "신대초교",
+        "복수중학교",
+        "복수면사무소",
+        "진산면사무소",
+        "진산",
+        "대둔산휴게소",
+    ]
+    if st.session_state.dj34_dir == "to_daejeon":
+        core_hubs_34 = list(reversed(core_hubs_34))
+    hub_badges = []
+    for h_nm in core_hubs_34:
+        if h_nm in (st.session_state.dj34_origin, st.session_state.dj34_dest):
+            hub_badges.append(
+                f"<span class='cong-chip' style='background:#DCFCE7;color:#14532D;border:2px solid #4D9A2A;'>📍 {h_nm}</span>"
+            )
+        else:
+            hub_badges.append(
+                f"<span class='cong-chip' style='background:#F8FAFC;color:#334155;border:1px solid #CBD5E1;'>{h_nm}</span>"
+            )
+    st.markdown(
+        "<div class='clean-card' style='padding:14px 18px;'>"
+        "<div style='font-size:0.92rem;font-weight:800;color:#334155;margin-bottom:8px;'>🗺️ 34번 핵심 경유지 한눈에 보기</div>"
+        + " ➔ ".join(hub_badges)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # 4) 상세 정류장 목록(정류장 번호 포함) & 1~22회 전체 표는 버튼을 눌러야 보이게 깔끔 숨김!
+    b34_col1, b34_col2 = st.columns(2)
+    with b34_col1:
+        st.button(
+            "🔼 전체 정류장 목록 접기"
+            if st.session_state.show_dj34_all_stops
+            else f"🚏 전체 정류장 · 정류장번호 보기 ({len(dj_stat['stops'])}곳)",
+            on_click=toggle_flag,
+            args=("show_dj34_all_stops",),
+            **STRETCH_KW,
+        )
+    with b34_col2:
+        st.button(
+            "🔼 1~22회 시간표 표 접기"
+            if st.session_state.show_dj34_full_table
+            else "📋 1회~22회 양방향 시간표 표로 보기",
+            on_click=toggle_flag,
+            args=("show_dj34_full_table",),
+            **STRETCH_KW,
+        )
+
+    if st.session_state.show_dj34_all_stops:
+        rows_s34 = []
+        for idx_s, s_item in enumerate(dj_stat["stops"], start=1):
+            mark = ""
+            if s_item["name"] == st.session_state.dj34_origin:
+                mark = "🙋 타는 곳"
+            elif s_item["name"] == st.session_state.dj34_dest:
+                mark = "🏁 내리는 곳"
+            elif idx_s - 1 == dj_stat["cur_idx"] and not dj_stat["is_ended"]:
+                mark = "🚌 현재 위치"
+            rows_s34.append({
+                "순번": idx_s,
+                "정류장명": s_item["name"],
+                "정류장 번호": s_item["id"],
+                "지역": s_item["zone"],
+                "기점 대비 소요": f"약 {s_item['min']}분",
+                "선택 표시": mark,
+            })
+        st.dataframe(pd.DataFrame(rows_s34), hide_index=True, **STRETCH_KW)
+
+    if st.session_state.show_dj34_full_table:
+        df_t34 = pd.DataFrame(DAEJEON_34_TIMETABLE).rename(columns={
+            "seq": "회차",
+            "seonambu": "서남부터미널 출발",
+            "daedunsan": "대둔산휴게소 출발",
+        })
+        st.dataframe(df_t34, hide_index=True, **STRETCH_KW)
+
+
+# =============================================================================
+# [메인 화면 2] 🔵 금산군 농어촌 · 공공형 버스 안내 화면
+# =============================================================================
+else:
+    top_h1, top_h2 = st.columns([4.1, 1.25])
+    with top_h1:
+        st.markdown(
+            f"""
 <div class="slim-header">
   <div class="slim-title">🚌 금산군 농어촌 · 공공형 버스 안내</div>
   <div class="road-mini">
@@ -3531,80 +4161,97 @@ st.markdown(
   <div style="font-size:0.82rem; color:#64748B; font-weight:700;">🕒 {now_dt.strftime('%H:%M')} 기준</div>
 </div>
 """,
-    unsafe_allow_html=True,
-)
-
-current_status = None
-if st.session_state.bus_no:
-    current_status = analyze_bus_status(
-        st.session_state.bus_no,
-        st.session_state.origin_stop,
-        st.session_state.dest_stop,
-        now_dt,
-        sim_mode,
-        traffic_scenario,
-    )
-
-# 최상단 고정 전광판
-pinned_top_board = st.container()
-with pinned_top_board:
-    if current_status and st.session_state.origin_stop and st.session_state.dest_stop:
-        o_name = st.session_state.origin_stop
-        d_name = st.session_state.dest_stop
-        b_stat = current_status
-
-        lb_lvl = b_stat["last_bus_level"]
-        lb_cls = (
-            "lb-last"
-            if lb_lvl == "last"
-            else ("lb-ended" if lb_lvl == "ended" else ("lb-warn" if lb_lvl == "penultimate" else "lb-ok"))
+            unsafe_allow_html=True,
+        )
+    with top_h2:
+        st.button(
+            "🟢 대전 34번 버스 보기",
+            on_click=switch_app_section,
+            args=(APP_SECTION_DJ34,),
+            help="서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소를 오가는 대전 34번 외곽버스 전용 화면으로 이동합니다.",
+            **STRETCH_KW,
         )
 
-        # 내 정류장 도착 문구
-        if b_stat["wait_min"] is not None:
-            arr_clock = (now_dt + timedelta(minutes=b_stat["wait_min"])).strftime("%H:%M")
-            wait_val = f"약 {b_stat['wait_min']}분 후"
-            wait_sub = (
-                f"곧 도착 ({arr_clock} 예정)"
-                if b_stat["stops_away"] == 0
-                else f"{b_stat['stops_away']}정거장 전 · {arr_clock} 예정"
-            )
-        else:
-            wait_val = "미경유 노선"
-            wait_sub = f"[{o_name}] 정류장을 지나지 않아요"
+    current_status = None
+    if st.session_state.bus_no:
+        current_status = analyze_bus_status(
+            st.session_state.bus_no,
+            st.session_state.origin_stop,
+            st.session_state.dest_stop,
+            now_dt,
+            sim_mode,
+            traffic_scenario,
+        )
 
-        # 목적지 이동시간 문구
-        if b_stat["travel_min"] is not None:
-            eta_clock = (
-                now_dt + timedelta(minutes=(b_stat["wait_min"] or 0) + b_stat["travel_min"])
-            ).strftime("%H:%M")
-            travel_val = f"약 {b_stat['travel_min']}분"
-            travel_sub = (
-                f"{eta_clock} 도착 예정 (정체 +{b_stat['travel_delay_min']}분)"
-                if b_stat["travel_delay_min"] > 0
-                else f"{eta_clock} 도착 예정 · 소통 원활"
-            )
-        else:
-            travel_val = "환승 필요"
-            travel_sub = "왼쪽 [🎯 목적지행 버스 추천]을 눌러보세요"
+    # 복수·진산 등 34번 정차 지역을 선택했을 때 한 줄 바로가기 안내 표시!
+    if st.session_state.origin_stop in ("진산", "복수", "구만리", "신대", "백암리", "배티재(대둔산)") or st.session_state.dest_stop in ("진산", "복수", "구만리", "신대", "백암리", "배티재(대둔산)"):
+        tip_c1, tip_c2 = st.columns([3.8, 1.2])
+        tip_c1.info("💡 **복수·진산·구만리·대둔산**에서는 대전 서남부터미널로 바로 가는 **🟢 대전 34번 외곽버스(일 22회)**도 자주 운행합니다!")
+        tip_c2.button(
+            "🟢 34번 시간표 보기",
+            key="jump_dj34_banner",
+            on_click=switch_app_section,
+            args=(APP_SECTION_DJ34,),
+            **STRETCH_KW,
+        )
 
-        # 막차 주의 한 줄 배너 (막차이거나 운행종료일 때만 간결하게 표시)
-        alert_strip = ""
-        if lb_lvl == "last":
-            alert_strip = (
-                "<div style='background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;"
-                "border-radius:12px;padding:8px 14px;margin-bottom:12px;font-weight:800;font-size:0.9rem;'>"
-                "🚨 오늘 마지막 버스(막차)입니다! 놓치지 않도록 미리 정류장에서 대기해 주세요.</div>"
-            )
-        elif lb_lvl == "ended":
-            alert_strip = (
-                f"<div style='background:#F1F5F9;border:1px solid #CBD5E1;color:#334155;"
-                f"border-radius:12px;padding:8px 14px;margin-bottom:12px;font-weight:700;font-size:0.9rem;'>"
-                f"🌙 오늘 운행이 종료되었습니다. 내일 첫차는 기점 기준 {b_stat['first_sched_dep_str']}에 출발합니다.</div>"
+    # 최상단 고정 전광판
+    pinned_top_board = st.container()
+    with pinned_top_board:
+        if current_status and st.session_state.origin_stop and st.session_state.dest_stop:
+            o_name = st.session_state.origin_stop
+            d_name = st.session_state.dest_stop
+            b_stat = current_status
+
+            lb_lvl = b_stat["last_bus_level"]
+            lb_cls = (
+                "lb-last"
+                if lb_lvl == "last"
+                else ("lb-ended" if lb_lvl == "ended" else ("lb-warn" if lb_lvl == "penultimate" else "lb-ok"))
             )
 
-        st.markdown(
-            f"""
+            if b_stat["wait_min"] is not None:
+                arr_clock = (now_dt + timedelta(minutes=b_stat["wait_min"])).strftime("%H:%M")
+                wait_val = f"약 {b_stat['wait_min']}분 후"
+                wait_sub = (
+                    f"곧 도착 ({arr_clock} 예정)"
+                    if b_stat["stops_away"] == 0
+                    else f"{b_stat['stops_away']}정거장 전 · {arr_clock} 예정"
+                )
+            else:
+                wait_val = "미경유 노선"
+                wait_sub = f"[{o_name}] 정류장을 지나지 않아요"
+
+            if b_stat["travel_min"] is not None:
+                eta_clock = (
+                    now_dt + timedelta(minutes=(b_stat["wait_min"] or 0) + b_stat["travel_min"])
+                ).strftime("%H:%M")
+                travel_val = f"약 {b_stat['travel_min']}분"
+                travel_sub = (
+                    f"{eta_clock} 도착 예정 (정체 +{b_stat['travel_delay_min']}분)"
+                    if b_stat["travel_delay_min"] > 0
+                    else f"{eta_clock} 도착 예정 · 소통 원활"
+                )
+            else:
+                travel_val = "환승 필요"
+                travel_sub = "왼쪽 [🎯 목적지행 버스 추천]을 눌러보세요"
+
+            alert_strip = ""
+            if lb_lvl == "last":
+                alert_strip = (
+                    "<div style='background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;"
+                    "border-radius:12px;padding:8px 14px;margin-bottom:12px;font-weight:800;font-size:0.9rem;'>"
+                    "🚨 오늘 마지막 버스(막차)입니다! 놓치지 않도록 미리 정류장에서 대기해 주세요.</div>"
+                )
+            elif lb_lvl == "ended":
+                alert_strip = (
+                    f"<div style='background:#F1F5F9;border:1px solid #CBD5E1;color:#334155;"
+                    f"border-radius:12px;padding:8px 14px;margin-bottom:12px;font-weight:700;font-size:0.9rem;'>"
+                    f"🌙 오늘 운행이 종료되었습니다. 내일 첫차는 기점 기준 {b_stat['first_sched_dep_str']}에 출발합니다.</div>"
+                )
+
+            st.markdown(
+                f"""
 <div class="top-board">
   <div class="top-board-head">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -3634,283 +4281,271 @@ with pinned_top_board:
   </div>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
-
-        # 전광판 하단 미니 액션 바: [음성 듣기] + [경유 정류장 보기 버튼(눌러야 보임)]
-        act_c1, act_c2 = st.columns([3.2, 1.2])
-        with act_c1:
-            tts_script = build_tts_announcement(b_stat, o_name, d_name)
-            render_tts_voice_bar(tts_script)
-        with act_c2:
-            stops_btn_txt = "🔼 경유지 접기" if st.session_state.show_route_stops else "📍 전체 경유지 보기"
-            st.button(stops_btn_txt, on_click=toggle_flag, args=("show_route_stops",), **STRETCH_KW)
-
-        if st.session_state.show_route_stops:
-            route_chips = []
-            for idx_s, s_nm in enumerate(b_stat["active_stops"]):
-                if idx_s == b_stat["cur_idx"]:
-                    route_chips.append(f"<b style='color:#D97706;'>🚌 {html.escape(s_nm)}(현위치)</b>")
-                elif s_nm == o_name:
-                    route_chips.append(f"<b style='color:#2563EB;'>🙋 {html.escape(s_nm)}(승차)</b>")
-                elif s_nm == d_name:
-                    route_chips.append(f"<b style='color:#7C3AED;'>🏁 {html.escape(s_nm)}(하차)</b>")
-                else:
-                    route_chips.append(html.escape(s_nm))
-            st.markdown(
-                "<div class='clean-card' style='padding:12px 16px; font-size:0.9rem; line-height:1.7;'>"
-                + " ➔ ".join(route_chips)
-                + "</div>",
                 unsafe_allow_html=True,
             )
 
-    else:
-        # 아직 노선을 고르기 전: 아주 깔끔한 안내 카드 + 원터치 대표 노선 버튼 3개
-        if st.session_state.origin_stop and st.session_state.dest_stop:
-            guide_headline = (
-                f"📍 `{st.session_state.origin_stop} ➔ {st.session_state.dest_stop}` 구간이 선택되었습니다!"
-            )
-            guide_sub = "왼쪽 메뉴에서 버스 번호를 고르거나 [🎯 목적지행 버스 추천받기] 버튼을 눌러주세요."
-        elif st.session_state.origin_stop:
-            guide_headline = f"📍 출발지 `{st.session_state.origin_stop}` 선택 완료!"
-            guide_sub = "이어서 왼쪽 메뉴에서 [2️⃣ 도착 정류장]을 선택해 주세요."
-        else:
-            guide_headline = "👈 왼쪽 메뉴에서 출발지와 목적지를 선택해 주세요"
-            guide_sub = "모바일에서는 왼쪽 위 [ > ] 버튼을 누르면 길찾기 메뉴가 열립니다. 아래 대표 노선을 바로 눌러보셔도 됩니다."
+            act_c1, act_c2 = st.columns([3.2, 1.2])
+            with act_c1:
+                tts_script = build_tts_announcement(b_stat, o_name, d_name)
+                render_tts_voice_bar(tts_script)
+            with act_c2:
+                stops_btn_txt = "🔼 경유지 접기" if st.session_state.show_route_stops else "📍 전체 경유지 보기"
+                st.button(stops_btn_txt, on_click=toggle_flag, args=("show_route_stops",), **STRETCH_KW)
 
-        st.markdown(
-            f"""
+            if st.session_state.show_route_stops:
+                route_chips = []
+                for idx_s, s_nm in enumerate(b_stat["active_stops"]):
+                    if idx_s == b_stat["cur_idx"]:
+                        route_chips.append(f"<b style='color:#D97706;'>🚌 {html.escape(s_nm)}(현위치)</b>")
+                    elif s_nm == o_name:
+                        route_chips.append(f"<b style='color:#2563EB;'>🙋 {html.escape(s_nm)}(승차)</b>")
+                    elif s_nm == d_name:
+                        route_chips.append(f"<b style='color:#7C3AED;'>🏁 {html.escape(s_nm)}(하차)</b>")
+                    else:
+                        route_chips.append(html.escape(s_nm))
+                st.markdown(
+                    "<div class='clean-card' style='padding:12px 16px; font-size:0.9rem; line-height:1.7;'>"
+                    + " ➔ ".join(route_chips)
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+        else:
+            if st.session_state.origin_stop and st.session_state.dest_stop:
+                guide_headline = (
+                    f"📍 `{st.session_state.origin_stop} ➔ {st.session_state.dest_stop}` 구간이 선택되었습니다!"
+                )
+                guide_sub = "왼쪽 메뉴에서 버스 번호를 고르거나 [🎯 목적지행 버스 추천받기] 버튼을 눌러주세요."
+            elif st.session_state.origin_stop:
+                guide_headline = f"📍 출발지 `{st.session_state.origin_stop}` 선택 완료!"
+                guide_sub = "이어서 왼쪽 메뉴에서 [2️⃣ 도착 정류장]을 선택해 주세요."
+            else:
+                guide_headline = "👈 왼쪽 메뉴에서 출발지와 목적지를 선택해 주세요"
+                guide_sub = "모바일에서는 왼쪽 위 [ > ] 버튼을 누르면 메뉴가 열립니다. 아래 자주 찾는 노선을 바로 눌러보셔도 됩니다."
+
+            st.markdown(
+                f"""
 <div class="welcome-card">
   <div style="font-size:1.15rem; font-weight:800; color:#0F172A; margin-bottom:6px;">{guide_headline}</div>
   <div style="font-size:0.9rem; color:#64748B;">{guide_sub}</div>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
-        q1, q2, q3 = st.columns(3)
-        with q1:
-            st.button(
-                "🚌 금산읍 ➔ 진산 (730번)",
-                on_click=apply_preset,
-                args=("금산읍", "진산", "730"),
-                **STRETCH_KW,
-            )
-        with q2:
-            st.button(
-                "🚌 마전 ➔ 서대산 (920번)",
-                on_click=apply_preset,
-                args=("마전", "서대산", "920"),
-                **STRETCH_KW,
-            )
-        with q3:
-            st.button(
-                "🚌 금산읍 ➔ 수통리 (330번)",
-                on_click=apply_preset,
-                args=("금산읍", "수통리", "330"),
-                **STRETCH_KW,
-            )
-
-
-# =============================================================================
-# [버튼 클릭 시에만 열림] 🎯 목적지행 맞춤 버스 추천 카드
-# =============================================================================
-
-if st.session_state.show_recommend and st.session_state.origin_stop and st.session_state.dest_stop:
-    o_stop = st.session_state.origin_stop
-    d_stop = st.session_state.dest_stop
-    direct_matches = find_direct_buses(o_stop, d_stop)
-
-    with st.container():
-        rh1, rh2 = st.columns([4.5, 1.0])
-        rh1.markdown(f"#### 🎯 `{o_stop} ➔ {d_stop}` 추천 버스")
-        rh2.button("✕ 닫기", key="close_rec_btn", on_click=toggle_recommend_panel, **STRETCH_KW)
-
-        if direct_matches:
-            evaluated = [
-                analyze_bus_status(dm["bus_no"], o_stop, d_stop, now_dt, sim_mode, traffic_scenario)
-                for dm in direct_matches
-            ]
-            evaluated.sort(
-                key=lambda x: (
-                    1 if x["last_bus_level"] == "ended" else 0,
-                    (x["wait_min"] or 999) + (x["travel_min"] or 999),
-                )
-            )
-            for rank, item in enumerate(evaluated, start=1):
-                tag = "🏆 최단 도착" if rank == 1 else f"추천 {rank}"
-                rc1, rc2 = st.columns([4.2, 1.1])
-                with rc1:
-                    st.markdown(
-                        f"<div class='clean-card' style='padding:12px 16px; margin-bottom:8px; "
-                        f"border-left:5px solid {'#2563EB' if rank == 1 else '#CBD5E1'};'>"
-                        f"<b>{tag} · 🚌 {item['bus_no']}번</b> "
-                        f"<span style='color:#64748B;font-size:0.86rem;'>({item['last_bus_short']})</span><br>"
-                        f"<span style='font-size:0.92rem;color:#334155;'>"
-                        f"현위치 <b>{item['current_bus_stop']}</b> · "
-                        f"<b style='color:#2563EB;'>약 {item['wait_min']}분 대기</b> · "
-                        f"탑승 후 약 {item['travel_min']}분 소요</span></div>",
-                        unsafe_allow_html=True,
-                    )
-                with rc2:
-                    st.button(
-                        f"{item['bus_no']}번 선택",
-                        key=f"pick_rec_{item['bus_no']}",
-                        type="primary" if rank == 1 else "secondary",
-                        on_click=pick_recommended_bus,
-                        args=(item["bus_no"],),
-                        **STRETCH_KW,
-                    )
-        else:
-            tr = find_transfer_route(o_stop, d_stop)
-            if tr:
-                st.info(
-                    f"🔄 직통 노선이 없어 **`{tr['transfer_stop']}` 환승**을 추천합니다: "
-                    f"`{o_stop}` ➔ **[{tr['leg1_bus']}번]** ➔ **`{tr['transfer_stop']}`** ➔ **[{tr['leg2_bus']}번]** ➔ `{d_stop}`"
-                )
-                tc1, tc2 = st.columns(2)
-                with tc1:
-                    st.button(
-                        f"1구간 ({tr['leg1_bus']}번) 보기",
-                        key="pick_tr_leg1",
-                        on_click=pick_recommended_bus,
-                        args=(tr["leg1_bus"],),
-                        **STRETCH_KW,
-                    )
-                with tc2:
-                    st.button(
-                        f"2구간 ({tr['leg2_bus']}번) 보기",
-                        key="pick_tr_leg2",
-                        on_click=pick_recommended_bus,
-                        args=(tr["leg2_bus"],),
-                        **STRETCH_KW,
-                    )
-            else:
-                st.warning("해당 구간을 잇는 노선을 찾지 못했습니다.")
-
-
-# =============================================================================
-# [4가지 모드 선택 버튼 바] 누른 모드 딱 하나만 깔끔하게 표시
-# =============================================================================
-
-st.write("")
-m_cols = st.columns(4)
-for m_col, m_label in zip(m_cols, ALL_MODES):
-    with m_col:
-        is_cur = st.session_state.active_mode == m_label
-        st.button(
-            m_label,
-            key=f"mode_tab_{m_label}",
-            type="primary" if is_cur else "secondary",
-            on_click=set_active_mode,
-            args=(m_label,),
-            **STRETCH_KW,
-        )
-
-active_mode = st.session_state.active_mode
-
-
-# -----------------------------------------------------------------------------
-# [모드 1] 🚦 노선 지도 · 도로 정체 색상 모드 (지도 앱 메인 화면!)
-# -----------------------------------------------------------------------------
-if active_mode == MODE_MAP:
-    if current_status:
-        target_segs = current_status["trip_segments"] or current_status["segments"]
-        n_g = sum(1 for s in target_segs if s["level"] == "원활")
-        n_y = sum(1 for s in target_segs if s["level"] == "서행")
-        n_r = sum(1 for s in target_segs if s["level"] == "정체")
-        summary_line = (
-            f"<span class='cong-chip' style='background:#DCFCE7;color:#166534;'>🟢 원활 {n_g}구간</span>"
-            f"<span class='cong-chip' style='background:#FEF3C7;color:#92400E;'>🟡 서행 {n_y}구간</span>"
-            f"<span class='cong-chip' style='background:#FEE2E2;color:#991B1B;'>🔴 정체 {n_r}구간</span>"
-        )
-    else:
-        summary_line = (
-            "<span class='cong-chip' style='background:#DCFCE7;color:#166534;'>🟢 초록: 소통 원활</span>"
-            "<span class='cong-chip' style='background:#FEF3C7;color:#92400E;'>🟡 노랑: 서행</span>"
-            "<span class='cong-chip' style='background:#FEE2E2;color:#991B1B;'>🔴 빨강: 정체</span>"
-        )
-
-    st.markdown(
-        f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:6px 0 8px 0;'>"
-        f"<div>{summary_line}</div>"
-        f"<div style='font-size:0.83rem;color:#64748B;'>선·정류장에 마우스를 올리면 상세 정보가 표시됩니다</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-    if HAS_PLOTLY:
-        route_fig = draw_geumsan_route_map(
-            traffic_scenario=traffic_scenario,
-            now_dt=now_dt,
-            bus_status=current_status,
-            origin_stop=st.session_state.origin_stop,
-            dest_stop=st.session_state.dest_stop,
-        )
-        st.plotly_chart(route_fig, **STRETCH_KW)
-    else:
-        render_fallback_svg_route_map(
-            traffic_scenario=traffic_scenario,
-            now_dt=now_dt,
-            bus_status=current_status,
-            origin_stop=st.session_state.origin_stop,
-            dest_stop=st.session_state.dest_stop,
-        )
-
-    # 구간별 상세 속도 카드는 버튼을 눌러야 보이게 처리
-    if current_status:
-        target_segs = current_status["trip_segments"] or current_status["segments"]
-        seg_btn_label = (
-            "🔼 구간별 상세 속도 접기"
-            if st.session_state.show_seg_detail
-            else f"🛣️ 구간별 도로 속도 자세히 보기 ({len(target_segs)}개 구간)"
-        )
-        st.button(seg_btn_label, on_click=toggle_flag, args=("show_seg_detail",))
-        if st.session_state.show_seg_detail:
-            cards = [
-                f"<div style='background:{s['bg']};border:1.5px solid {s['border']};border-radius:12px;"
-                f"padding:10px 14px;min-width:150px;flex:1;'>"
-                f"<div style='font-weight:800;font-size:0.92rem;color:#0F172A;'>{html.escape(s['from'])} ➔ {html.escape(s['to'])}</div>"
-                f"<div style='color:{s['color']};font-weight:800;margin-top:3px;'>{s['icon']} {s['level']} · 약 {s['real_min']}분</div>"
-                f"<div style='font-size:0.8rem;color:#475569;'>평균 {s['speed_kmh']}km/h</div></div>"
-                for s in target_segs
-            ]
-            st.markdown(
-                "<div style='display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;'>" + "".join(cards) + "</div>",
                 unsafe_allow_html=True,
             )
+            q1, q2, q3, q4 = st.columns(4)
+            with q1:
+                st.button(
+                    "🚌 금산읍 ➔ 진산 (730번)",
+                    on_click=apply_preset,
+                    args=("금산읍", "진산", "730"),
+                    **STRETCH_KW,
+                )
+            with q2:
+                st.button(
+                    "🚌 마전 ➔ 서대산 (920번)",
+                    on_click=apply_preset,
+                    args=("마전", "서대산", "920"),
+                    **STRETCH_KW,
+                )
+            with q3:
+                st.button(
+                    "🚌 금산읍 ➔ 수통리 (330번)",
+                    on_click=apply_preset,
+                    args=("금산읍", "수통리", "330"),
+                    **STRETCH_KW,
+                )
+            with q4:
+                st.button(
+                    "🟢 대전 34번 (복수·진산↔대전)",
+                    on_click=switch_app_section,
+                    args=(APP_SECTION_DJ34,),
+                    **STRETCH_KW,
+                )
 
-
-# -----------------------------------------------------------------------------
-# [모드 2] ⏳ 대기시간 모드 (한눈에 보는 타이머 + 타 노선 표는 버튼 클릭 시 표시)
-# -----------------------------------------------------------------------------
-elif active_mode == MODE_WAIT:
-    if not st.session_state.origin_stop:
-        st.info("👈 왼쪽 메뉴에서 **[1️⃣ 출발 정류장]**을 먼저 선택해 주세요.")
-    else:
+    # [버튼 클릭 시에만 열림] 🎯 목적지행 맞춤 버스 추천 카드
+    if st.session_state.show_recommend and st.session_state.origin_stop and st.session_state.dest_stop:
         o_stop = st.session_state.origin_stop
-        if current_status and current_status["wait_min"] is not None:
-            w_min = current_status["wait_min"]
-            arr_t = (now_dt + timedelta(minutes=w_min)).strftime("%H:%M")
-            u_col = "#16A34A" if w_min <= 8 else ("#D97706" if w_min <= 18 else "#2563EB")
-            u_tip = "곧 도착합니다! 승강장에서 준비해 주세요." if w_min <= 5 else "시간에 맞춰 여유 있게 대기하세요."
+        d_stop = st.session_state.dest_stop
+        direct_matches = find_direct_buses(o_stop, d_stop)
 
-            o_idx = current_status["origin_idx"]
-            c_idx = current_status["cur_idx"]
-            approach = current_status["active_stops"][: o_idx + 1]
-            step_chips = []
-            for i_s, s_nm in enumerate(approach):
-                esc_nm = html.escape(s_nm)
-                if i_s < c_idx:
-                    step_chips.append(f"<span class='cong-chip' style='background:#F1F5F9;color:#94A3B8;'>✓ {esc_nm}</span>")
-                elif i_s == c_idx:
-                    step_chips.append(f"<span class='cong-chip' style='background:#FEF08A;color:#854D0E;border:1.5px solid #EAB308;'>🚌 {esc_nm} (현위치)</span>")
-                elif i_s == o_idx:
-                    step_chips.append(f"<span class='cong-chip' style='background:#DBEAFE;color:#1E40AF;border:1.5px solid #2563EB;'>🙋 {esc_nm} (내 정류장)</span>")
+        with st.container():
+            rh1, rh2 = st.columns([4.5, 1.0])
+            rh1.markdown(f"#### 🎯 `{o_stop} ➔ {d_stop}` 추천 버스")
+            rh2.button("✕ 닫기", key="close_rec_btn", on_click=toggle_recommend_panel, **STRETCH_KW)
+
+            if direct_matches:
+                evaluated = [
+                    analyze_bus_status(dm["bus_no"], o_stop, d_stop, now_dt, sim_mode, traffic_scenario)
+                    for dm in direct_matches
+                ]
+                evaluated.sort(
+                    key=lambda x: (
+                        1 if x["last_bus_level"] == "ended" else 0,
+                        (x["wait_min"] or 999) + (x["travel_min"] or 999),
+                    )
+                )
+                for rank, item in enumerate(evaluated, start=1):
+                    tag = "🏆 최단 도착" if rank == 1 else f"추천 {rank}"
+                    rc1, rc2 = st.columns([4.2, 1.1])
+                    with rc1:
+                        st.markdown(
+                            f"<div class='clean-card' style='padding:12px 16px; margin-bottom:8px; "
+                            f"border-left:5px solid {'#2563EB' if rank == 1 else '#CBD5E1'};'>"
+                            f"<b>{tag} · 🚌 {item['bus_no']}번</b> "
+                            f"<span style='color:#64748B;font-size:0.86rem;'>({item['last_bus_short']})</span><br>"
+                            f"<span style='font-size:0.92rem;color:#334155;'>"
+                            f"현위치 <b>{item['current_bus_stop']}</b> · "
+                            f"<b style='color:#2563EB;'>약 {item['wait_min']}분 대기</b> · "
+                            f"탑승 후 약 {item['travel_min']}분 소요</span></div>",
+                            unsafe_allow_html=True,
+                        )
+                    with rc2:
+                        st.button(
+                            f"{item['bus_no']}번 선택",
+                            key=f"pick_rec_{item['bus_no']}",
+                            type="primary" if rank == 1 else "secondary",
+                            on_click=pick_recommended_bus,
+                            args=(item["bus_no"],),
+                            **STRETCH_KW,
+                        )
+            else:
+                tr = find_transfer_route(o_stop, d_stop)
+                if tr:
+                    st.info(
+                        f"🔄 직통 노선이 없어 **`{tr['transfer_stop']}` 환승**을 추천합니다: "
+                        f"`{o_stop}` ➔ **[{tr['leg1_bus']}번]** ➔ **`{tr['transfer_stop']}`** ➔ **[{tr['leg2_bus']}번]** ➔ `{d_stop}`"
+                    )
+                    tc1, tc2 = st.columns(2)
+                    with tc1:
+                        st.button(
+                            f"1구간 ({tr['leg1_bus']}번) 보기",
+                            key="pick_tr_leg1",
+                            on_click=pick_recommended_bus,
+                            args=(tr["leg1_bus"],),
+                            **STRETCH_KW,
+                        )
+                    with tc2:
+                        st.button(
+                            f"2구간 ({tr['leg2_bus']}번) 보기",
+                            key="pick_tr_leg2",
+                            on_click=pick_recommended_bus,
+                            args=(tr["leg2_bus"],),
+                            **STRETCH_KW,
+                        )
                 else:
-                    step_chips.append(f"<span class='cong-chip' style='background:#F8FAFC;color:#334155;border:1px solid #CBD5E1;'>{esc_nm}</span>")
+                    st.warning("해당 구간을 잇는 노선을 찾지 못했습니다.")
 
-            st.markdown(
-                f"""
+    # [4가지 모드 선택 버튼 바] 누른 모드 딱 하나만 깔끔하게 표시
+    st.write("")
+    m_cols = st.columns(4)
+    for m_col, m_label in zip(m_cols, ALL_MODES):
+        with m_col:
+            is_cur = st.session_state.active_mode == m_label
+            st.button(
+                m_label,
+                key=f"mode_tab_{m_label}",
+                type="primary" if is_cur else "secondary",
+                on_click=set_active_mode,
+                args=(m_label,),
+                **STRETCH_KW,
+            )
+
+    active_mode = st.session_state.active_mode
+
+    if active_mode == MODE_MAP:
+        if current_status:
+            target_segs = current_status["trip_segments"] or current_status["segments"]
+            n_g = sum(1 for s in target_segs if s["level"] == "원활")
+            n_y = sum(1 for s in target_segs if s["level"] == "서행")
+            n_r = sum(1 for s in target_segs if s["level"] == "정체")
+            summary_line = (
+                f"<span class='cong-chip' style='background:#DCFCE7;color:#166534;'>🟢 원활 {n_g}구간</span>"
+                f"<span class='cong-chip' style='background:#FEF3C7;color:#92400E;'>🟡 서행 {n_y}구간</span>"
+                f"<span class='cong-chip' style='background:#FEE2E2;color:#991B1B;'>🔴 정체 {n_r}구간</span>"
+            )
+        else:
+            summary_line = (
+                "<span class='cong-chip' style='background:#DCFCE7;color:#166534;'>🟢 초록: 소통 원활</span>"
+                "<span class='cong-chip' style='background:#FEF3C7;color:#92400E;'>🟡 노랑: 서행</span>"
+                "<span class='cong-chip' style='background:#FEE2E2;color:#991B1B;'>🔴 빨강: 정체</span>"
+            )
+
+        st.markdown(
+            f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin:6px 0 8px 0;'>"
+            f"<div>{summary_line}</div>"
+            f"<div style='font-size:0.83rem;color:#64748B;'>선·정류장에 마우스를 올리면 상세 정보가 표시됩니다</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        if HAS_PLOTLY:
+            route_fig = draw_geumsan_route_map(
+                traffic_scenario=traffic_scenario,
+                now_dt=now_dt,
+                bus_status=current_status,
+                origin_stop=st.session_state.origin_stop,
+                dest_stop=st.session_state.dest_stop,
+            )
+            st.plotly_chart(route_fig, **STRETCH_KW)
+        else:
+            render_fallback_svg_route_map(
+                traffic_scenario=traffic_scenario,
+                now_dt=now_dt,
+                bus_status=current_status,
+                origin_stop=st.session_state.origin_stop,
+                dest_stop=st.session_state.dest_stop,
+            )
+
+        if current_status:
+            target_segs = current_status["trip_segments"] or current_status["segments"]
+            seg_btn_label = (
+                "🔼 구간별 상세 속도 접기"
+                if st.session_state.show_seg_detail
+                else f"🛣️ 구간별 도로 속도 자세히 보기 ({len(target_segs)}개 구간)"
+            )
+            st.button(seg_btn_label, on_click=toggle_flag, args=("show_seg_detail",))
+            if st.session_state.show_seg_detail:
+                cards = [
+                    f"<div style='background:{s['bg']};border:1.5px solid {s['border']};border-radius:12px;"
+                    f"padding:10px 14px;min-width:150px;flex:1;'>"
+                    f"<div style='font-weight:800;font-size:0.92rem;color:#0F172A;'>{html.escape(s['from'])} ➔ {html.escape(s['to'])}</div>"
+                    f"<div style='color:{s['color']};font-weight:800;margin-top:3px;'>{s['icon']} {s['level']} · 약 {s['real_min']}분</div>"
+                    f"<div style='font-size:0.8rem;color:#475569;'>평균 {s['speed_kmh']}km/h</div></div>"
+                    for s in target_segs
+                ]
+                st.markdown(
+                    "<div style='display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;'>" + "".join(cards) + "</div>",
+                    unsafe_allow_html=True,
+                )
+
+    elif active_mode == MODE_WAIT:
+        if not st.session_state.origin_stop:
+            st.info("👈 왼쪽 메뉴에서 **[1️⃣ 출발 정류장]**을 먼저 선택해 주세요.")
+        else:
+            o_stop = st.session_state.origin_stop
+            if current_status and current_status["wait_min"] is not None:
+                w_min = current_status["wait_min"]
+                arr_t = (now_dt + timedelta(minutes=w_min)).strftime("%H:%M")
+                u_col = "#16A34A" if w_min <= 8 else ("#D97706" if w_min <= 18 else "#2563EB")
+                u_tip = "곧 도착합니다! 승강장에서 준비해 주세요." if w_min <= 5 else "시간에 맞춰 여유 있게 대기하세요."
+
+                o_idx = current_status["origin_idx"]
+                c_idx = current_status["cur_idx"]
+                approach = current_status["active_stops"][: o_idx + 1]
+                step_chips = []
+                for i_s, s_nm in enumerate(approach):
+                    esc_nm = html.escape(s_nm)
+                    if i_s < c_idx:
+                        step_chips.append(f"<span class='cong-chip' style='background:#F1F5F9;color:#94A3B8;'>✓ {esc_nm}</span>")
+                    elif i_s == c_idx:
+                        step_chips.append(f"<span class='cong-chip' style='background:#FEF08A;color:#854D0E;border:1.5px solid #EAB308;'>🚌 {esc_nm} (현위치)</span>")
+                    elif i_s == o_idx:
+                        step_chips.append(f"<span class='cong-chip' style='background:#DBEAFE;color:#1E40AF;border:1.5px solid #2563EB;'>🙋 {esc_nm} (내 정류장)</span>")
+                    else:
+                        step_chips.append(f"<span class='cong-chip' style='background:#F8FAFC;color:#334155;border:1px solid #CBD5E1;'>{esc_nm}</span>")
+
+                st.markdown(
+                    f"""
 <div class="clean-card" style="text-align:center; padding:26px 20px;">
   <div style="font-size:0.95rem; font-weight:700; color:#64748B;">[{html.escape(o_stop)}] 정류장 · {html.escape(current_status['name'])}</div>
   <div style="font-size:3.0rem; font-weight:900; color:{u_col}; margin:8px 0;">약 {w_min}분 후 도착</div>
@@ -3921,161 +4556,152 @@ elif active_mode == MODE_WAIT:
   </div>
 </div>
 """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info(f"`{o_stop}` 정류장이 선택되었습니다. 왼쪽에서 버스를 고르거나 아래 버튼을 눌러 정차 노선을 확인하세요.")
-
-        # 이 정류장의 다른 모든 버스 비교표는 버튼을 눌러야 펼쳐짐
-        other_btn_txt = (
-            f"🔼 `{o_stop}` 정차 다른 버스 목록 접기"
-            if st.session_state.show_other_buses
-            else f"📋 `{o_stop}` 정류장에 서는 모든 버스 대기시간 보기"
-        )
-        st.button(other_btn_txt, on_click=toggle_flag, args=("show_other_buses",))
-
-        if st.session_state.show_other_buses or not current_status:
-            passing_rows = []
-            for bno in sorted(BUS_ROUTES.keys(), key=lambda x: int(x) if x.isdigit() else 999):
-                if o_stop in BUS_ROUTES[bno]["stops"]:
-                    st_b = analyze_bus_status(
-                        bno, o_stop, st.session_state.dest_stop, now_dt, sim_mode, traffic_scenario
-                    )
-                    goes_dest = (
-                        "✅ 직통"
-                        if st_b["route_match"] in ("direct_out", "direct_in")
-                        else ("➖ 타방면" if st.session_state.dest_stop else "정차")
-                    )
-                    passing_rows.append({
-                        "버스": f"{bno}번",
-                        "목적지행": goes_dest,
-                        "현재 위치": st_b["current_bus_stop"],
-                        "대기시간(분)": st_b["wait_min"],
-                        "막차 상태": st_b["last_bus_short"],
-                        "다음 기점발": st_b["next_sched_dep_str"],
-                    })
-            df_pass = pd.DataFrame(passing_rows).sort_values(by="대기시간(분)")
-            st.dataframe(df_pass, hide_index=True, **STRETCH_KW)
-
-
-# -----------------------------------------------------------------------------
-# [모드 3] 🧭 이동시간 예측 모드 (핵심 요약 + 막대 그래프, 상세 시각표는 버튼으로 토글)
-# -----------------------------------------------------------------------------
-elif active_mode == MODE_ETA:
-    if not st.session_state.origin_stop or not st.session_state.dest_stop:
-        st.info("👈 왼쪽 메뉴에서 **출발지**와 **도착지**를 먼저 선택해 주세요.")
-    elif not current_status or current_status["route_match"] not in ("direct_out", "direct_in"):
-        o_stop = st.session_state.origin_stop
-        d_stop = st.session_state.dest_stop
-        direct_Check = find_direct_buses(o_stop, d_stop)
-        if direct_Check:
-            st.info("👈 왼쪽 메뉴의 **[🎯 목적지행 버스 추천받기]**를 눌러 직통 버스를 선택해 주세요.")
-        else:
-            tr = find_transfer_route(o_stop, d_stop)
-            if tr:
-                st.warning(
-                    f"`{o_stop} ➔ {d_stop}` 구간은 직통 버스가 없어 **`{tr['transfer_stop']}` 환승**이 필요합니다. "
-                    f"(1구간 **{tr['leg1_bus']}번** ➔ `{tr['transfer_stop']}` 환승 ➔ 2구간 **{tr['leg2_bus']}번**)"
+                    unsafe_allow_html=True,
                 )
-    else:
-        o_stop = st.session_state.origin_stop
-        d_stop = st.session_state.dest_stop
-        t_segs = current_status["trip_segments"]
-        board_dt = now_dt + timedelta(minutes=current_status["wait_min"] or 0)
-        alight_dt = board_dt + timedelta(minutes=current_status["travel_min"])
-        delay_m = current_status["travel_delay_min"]
+            else:
+                st.info(f"`{o_stop}` 정류장이 선택되었습니다. 왼쪽에서 버스를 고르거나 아래 버튼을 눌러 정차 노선을 확인하세요.")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🙋 승차 예상", board_dt.strftime("%H:%M"), o_stop)
-        c2.metric(
-            "🧭 탑승 이동시간",
-            f"약 {current_status['travel_min']}분",
-            f"정체 +{delay_m}분 반영" if delay_m > 0 else "소통 원활",
-            delta_color="inverse",
-        )
-        c3.metric("🏁 하차 예상", alight_dt.strftime("%H:%M"), f"{d_stop} ({len(t_segs)}정거장)")
-
-        if HAS_PLOTLY:
-            fig_bar = go.Figure(go.Bar(
-                x=[s["real_min"] for s in t_segs],
-                y=[f"{s['from']} ➔ {s['to']}" for s in t_segs],
-                orientation="h",
-                marker_color=[s["color"] for s in t_segs],
-                text=[f"{s['icon']} {s['level']} · {s['real_min']}분" for s in t_segs],
-                textposition="auto",
-            ))
-            fig_bar.update_layout(
-                title="구간별 소요시간 (분)",
-                height=max(220, 48 * len(t_segs) + 70),
-                margin=dict(l=12, r=12, t=38, b=20),
-                yaxis=dict(autorange="reversed"),
-                plot_bgcolor="#F8FAFC",
+            other_btn_txt = (
+                f"🔼 `{o_stop}` 정차 다른 버스 목록 접기"
+                if st.session_state.show_other_buses
+                else f"📋 `{o_stop}` 정류장에 서는 모든 버스 대기시간 보기"
             )
-            st.plotly_chart(fig_bar, **STRETCH_KW)
+            st.button(other_btn_txt, on_click=toggle_flag, args=("show_other_buses",))
+
+            if st.session_state.show_other_buses or not current_status:
+                passing_rows = []
+                for bno in sorted(BUS_ROUTES.keys(), key=lambda x: int(x) if x.isdigit() else 999):
+                    if o_stop in BUS_ROUTES[bno]["stops"]:
+                        st_b = analyze_bus_status(
+                            bno, o_stop, st.session_state.dest_stop, now_dt, sim_mode, traffic_scenario
+                        )
+                        goes_dest = (
+                            "✅ 직통"
+                            if st_b["route_match"] in ("direct_out", "direct_in")
+                            else ("➖ 타방면" if st.session_state.dest_stop else "정차")
+                        )
+                        passing_rows.append({
+                            "버스": f"{bno}번",
+                            "목적지행": goes_dest,
+                            "현재 위치": st_b["current_bus_stop"],
+                            "대기시간(분)": st_b["wait_min"],
+                            "막차 상태": st_b["last_bus_short"],
+                            "다음 기점발": st_b["next_sched_dep_str"],
+                        })
+                df_pass = pd.DataFrame(passing_rows).sort_values(by="대기시간(분)")
+                st.dataframe(df_pass, hide_index=True, **STRETCH_KW)
+
+    elif active_mode == MODE_ETA:
+        if not st.session_state.origin_stop or not st.session_state.dest_stop:
+            st.info("👈 왼쪽 메뉴에서 **출발지**와 **도착지**를 먼저 선택해 주세요.")
+        elif not current_status or current_status["route_match"] not in ("direct_out", "direct_in"):
+            o_stop = st.session_state.origin_stop
+            d_stop = st.session_state.dest_stop
+            direct_check = find_direct_buses(o_stop, d_stop)
+            if direct_check:
+                st.info("👈 왼쪽 메뉴의 **[🎯 목적지행 버스 추천받기]**를 눌러 직통 버스를 선택해 주세요.")
+            else:
+                tr = find_transfer_route(o_stop, d_stop)
+                if tr:
+                    st.warning(
+                        f"`{o_stop} ➔ {d_stop}` 구간은 직통 버스가 없어 **`{tr['transfer_stop']}` 환승**이 필요합니다. "
+                        f"(1구간 **{tr['leg1_bus']}번** ➔ `{tr['transfer_stop']}` 환승 ➔ 2구간 **{tr['leg2_bus']}번**)"
+                    )
         else:
-            render_fallback_bar_chart(t_segs)
+            o_stop = st.session_state.origin_stop
+            d_stop = st.session_state.dest_stop
+            t_segs = current_status["trip_segments"]
+            board_dt = now_dt + timedelta(minutes=current_status["wait_min"] or 0)
+            alight_dt = board_dt + timedelta(minutes=current_status["travel_min"])
+            delay_m = current_status["travel_delay_min"]
 
-        eta_btn_txt = (
-            "🔼 정류장별 통과 시각표 접기"
-            if st.session_state.show_eta_table
-            else "🕒 정류장별 예상 통과 시각표 보기"
-        )
-        st.button(eta_btn_txt, on_click=toggle_flag, args=("show_eta_table",))
-        if st.session_state.show_eta_table:
-            timeline_rows = [{
-                "구분": "승차",
-                "정류장": o_stop,
-                "도로 상태": "-",
-                "소요": "0분",
-                "예상 시각": board_dt.strftime("%H:%M"),
-            }]
-            running_m = 0
-            for idx_leg, seg in enumerate(t_segs, start=1):
-                running_m += seg["real_min"]
-                pass_t = (board_dt + timedelta(minutes=running_m)).strftime("%H:%M")
-                is_last = idx_leg == len(t_segs)
-                timeline_rows.append({
-                    "구분": "하차" if is_last else f"경유 {idx_leg}",
-                    "정류장": seg["to"],
-                    "도로 상태": f"{seg['icon']} {seg['level']}",
-                    "소요": f"약 {seg['real_min']}분",
-                    "예상 시각": pass_t,
-                })
-            st.dataframe(pd.DataFrame(timeline_rows), hide_index=True, **STRETCH_KW)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🙋 승차 예상", board_dt.strftime("%H:%M"), o_stop)
+            c2.metric(
+                "🧭 탑승 이동시간",
+                f"약 {current_status['travel_min']}분",
+                f"정체 +{delay_m}분 반영" if delay_m > 0 else "소통 원활",
+                delta_color="inverse",
+            )
+            c3.metric("🏁 하차 예상", alight_dt.strftime("%H:%M"), f"{d_stop} ({len(t_segs)}정거장)")
 
+            if HAS_PLOTLY:
+                fig_bar = go.Figure(go.Bar(
+                    x=[s["real_min"] for s in t_segs],
+                    y=[f"{s['from']} ➔ {s['to']}" for s in t_segs],
+                    orientation="h",
+                    marker_color=[s["color"] for s in t_segs],
+                    text=[f"{s['icon']} {s['level']} · {s['real_min']}분" for s in t_segs],
+                    textposition="auto",
+                ))
+                fig_bar.update_layout(
+                    title="구간별 소요시간 (분)",
+                    height=max(220, 48 * len(t_segs) + 70),
+                    margin=dict(l=12, r=12, t=38, b=20),
+                    yaxis=dict(autorange="reversed"),
+                    plot_bgcolor="#F8FAFC",
+                )
+                st.plotly_chart(fig_bar, **STRETCH_KW)
+            else:
+                render_fallback_bar_chart(t_segs)
 
-# -----------------------------------------------------------------------------
-# [모드 4] 📅 시간표 안내 (선택 노선은 한눈에 보이는 시각 칩으로, 전체 표는 버튼 클릭 시 열림)
-# -----------------------------------------------------------------------------
-else:
-    now_min_val = now_dt.hour * 60 + now_dt.minute
+            eta_btn_txt = (
+                "🔼 정류장별 통과 시각표 접기"
+                if st.session_state.show_eta_table
+                else "🕒 정류장별 예상 통과 시각표 보기"
+            )
+            st.button(eta_btn_txt, on_click=toggle_flag, args=("show_eta_table",))
+            if st.session_state.show_eta_table:
+                timeline_rows = [{
+                    "구분": "승차",
+                    "정류장": o_stop,
+                    "도로 상태": "-",
+                    "소요": "0분",
+                    "예상 시각": board_dt.strftime("%H:%M"),
+                }]
+                running_m = 0
+                for idx_leg, seg in enumerate(t_segs, start=1):
+                    running_m += seg["real_min"]
+                    pass_t = (board_dt + timedelta(minutes=running_m)).strftime("%H:%M")
+                    is_last = idx_leg == len(t_segs)
+                    timeline_rows.append({
+                        "구분": "하차" if is_last else f"경유 {idx_leg}",
+                        "정류장": seg["to"],
+                        "도로 상태": f"{seg['icon']} {seg['level']}",
+                        "소요": f"약 {seg['real_min']}분",
+                        "예상 시각": pass_t,
+                    })
+                st.dataframe(pd.DataFrame(timeline_rows), hide_index=True, **STRETCH_KW)
 
-    if current_status:
-        def _build_time_chips(times_list: list[str]) -> str:
-            if not times_list:
-                return "<span style='color:#94A3B8;'>운행 시각 정보 없음</span>"
-            chips = []
-            next_marked = False
-            for idx_t, t_str in enumerate(times_list):
-                t_m = parse_hhmm_to_min(t_str)
-                is_last = idx_t == len(times_list) - 1
-                if t_m >= now_min_val and not next_marked:
-                    next_marked = True
-                    tag = " · 막차" if is_last else " · 다음차"
-                    chips.append(f"<span class='time-chip time-next'>🚌 {t_str}{tag}</span>")
-                elif t_m < now_min_val:
-                    chips.append(f"<span class='time-chip time-past'>{t_str}</span>")
-                elif is_last:
-                    chips.append(f"<span class='time-chip time-last'>{t_str} (막차)</span>")
-                else:
-                    chips.append(f"<span class='time-chip time-future'>{t_str}</span>")
-            return "".join(chips)
+    else:
+        now_min_val = now_dt.hour * 60 + now_dt.minute
 
-        start_stop_name = BUS_ROUTES[current_status["bus_no"]]["stops"][0]
-        end_stop_name = BUS_ROUTES[current_status["bus_no"]]["stops"][-1]
+        if current_status:
+            def _build_time_chips(times_list: list[str]) -> str:
+                if not times_list:
+                    return "<span style='color:#94A3B8;'>운행 시각 정보 없음</span>"
+                chips = []
+                next_marked = False
+                for idx_t, t_str in enumerate(times_list):
+                    t_m = parse_hhmm_to_min(t_str)
+                    is_last = idx_t == len(times_list) - 1
+                    if t_m >= now_min_val and not next_marked:
+                        next_marked = True
+                        tag = " · 막차" if is_last else " · 다음차"
+                        chips.append(f"<span class='time-chip time-next'>🚌 {t_str}{tag}</span>")
+                    elif t_m < now_min_val:
+                        chips.append(f"<span class='time-chip time-past'>{t_str}</span>")
+                    elif is_last:
+                        chips.append(f"<span class='time-chip time-last'>{t_str} (막차)</span>")
+                    else:
+                        chips.append(f"<span class='time-chip time-future'>{t_str}</span>")
+                return "".join(chips)
 
-        st.markdown(
-            f"""
+            start_stop_name = BUS_ROUTES[current_status["bus_no"]]["stops"][0]
+            end_stop_name = BUS_ROUTES[current_status["bus_no"]]["stops"][-1]
+
+            st.markdown(
+                f"""
 <div class="clean-card">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
     <span style="font-size:1.1rem;font-weight:800;color:#0F172A;">🚌 {html.escape(current_status['name'])} 공식 시간표</span>
@@ -4091,96 +4717,105 @@ else:
   </div>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
-
-        if st.session_state.dest_stop in ("금산읍", "마전"):
-            st.caption(
-                f"💡 `{st.session_state.dest_stop}` 하차 후 대전복합(일 34회)·유성·서울강남 시외버스로 환승할 수 있습니다. "
-                "시간표는 아래 [전체 노선 · 시외버스 시간표 보기] 버튼을 눌러 확인하세요."
+                unsafe_allow_html=True,
             )
 
-        all_tbl_label = (
-            "🔼 전체 노선 · 시외버스 시간표 접기"
-            if st.session_state.show_all_timetables
-            else "📚 다른 노선 · 공공형 · 시외버스 전체 시간표 찾아보기"
-        )
-        st.button(all_tbl_label, on_click=toggle_flag, args=("show_all_timetables",))
-        should_show_tables = st.session_state.show_all_timetables
-    else:
-        st.caption("노선을 아직 선택하지 않아 전체 시간표 검색 화면을 표시합니다.")
-        should_show_tables = True
+            if st.session_state.dest_stop in ("금산읍", "마전"):
+                st.caption(
+                    f"💡 `{st.session_state.dest_stop}` 하차 후 대전복합(일 34회)·유성·서울강남 시외버스로 환승할 수 있습니다."
+                )
 
-    if should_show_tables:
-        t_tab1, t_tab2, t_tab3, t_tab4, t_tab5 = st.tabs([
-            "금산읍 출발",
-            "종점 출발",
-            "마전·진산·군북",
-            "공공형버스",
-            "시외버스",
-        ])
+            all_tbl_label = (
+                "🔼 전체 노선 · 시외버스 시간표 접기"
+                if st.session_state.show_all_timetables
+                else "📚 다른 노선 · 공공형 · 시외버스 · 대전34번 전체 시간표 찾아보기"
+            )
+            st.button(all_tbl_label, on_click=toggle_flag, args=("show_all_timetables",))
+            should_show_tables = st.session_state.show_all_timetables
+        else:
+            st.caption("노선을 아직 선택하지 않아 전체 시간표 검색 화면을 표시합니다.")
+            should_show_tables = True
 
-        with t_tab1:
-            df_out = pd.DataFrame(OUTBOUND_RURAL)
-            fc1, fc2 = st.columns([1.2, 1.8])
-            with fc1:
-                dirs = ["전체 방면"] + sorted(df_out["direction"].unique().tolist())
-                sel_dir = st.selectbox("방면 선택", dirs, key="tbl_dir_filter")
-            with fc2:
-                kw = st.text_input("노선번호 · 마을 검색 (예: 730, 진산)", key="tbl_kw")
-            if sel_dir != "전체 방면":
-                df_out = df_out[df_out["direction"] == sel_dir]
-            if kw.strip():
-                q = kw.strip()
-                df_out = df_out[
-                    df_out["bus_no"].str.contains(q, na=False)
-                    | df_out["via_dest"].str.contains(q, na=False)
-                ]
-            df_out = df_out.sort_values(by="time").rename(columns={
-                "direction": "방면",
-                "bus_no": "번호",
-                "time": "출발시간",
-                "origin": "출발지",
-                "via_dest": "주요 경유지 · 행선지",
-            })
-            st.dataframe(df_out[["방면", "번호", "출발시간", "출발지", "주요 경유지 · 행선지"]], hide_index=True, **STRETCH_KW)
+        if should_show_tables:
+            t_tab1, t_tab2, t_tab3, t_tab4, t_tab5, t_tab6 = st.tabs([
+                "금산읍 출발",
+                "종점 출발",
+                "마전·진산·군북",
+                "공공형버스",
+                "🟢 대전 34번",
+                "시외버스",
+            ])
 
-        with t_tab2:
-            df_in = pd.DataFrame(INBOUND_RURAL)
-            in_dirs = ["전체 구간"] + sorted(df_in["direction"].unique().tolist())
-            sel_in_dir = st.selectbox("구간 선택", in_dirs, key="tbl_in_dir")
-            if sel_in_dir != "전체 구간":
-                df_in = df_in[df_in["direction"] == sel_in_dir]
-            df_in = df_in.sort_values(by="time").rename(columns={
-                "direction": "운행 구간",
-                "time": "종점 출발시간",
-                "via_dest": "비고",
-            })
-            st.dataframe(df_in[["운행 구간", "종점 출발시간", "비고"]], hide_index=True, **STRETCH_KW)
+            with t_tab1:
+                df_out = pd.DataFrame(OUTBOUND_RURAL)
+                fc1, fc2 = st.columns([1.2, 1.8])
+                with fc1:
+                    dirs = ["전체 방면"] + sorted(df_out["direction"].unique().tolist())
+                    sel_dir = st.selectbox("방면 선택", dirs, key="tbl_dir_filter")
+                with fc2:
+                    kw = st.text_input("노선번호 · 마을 검색 (예: 730, 진산)", key="tbl_kw")
+                if sel_dir != "전체 방면":
+                    df_out = df_out[df_out["direction"] == sel_dir]
+                if kw.strip():
+                    q = kw.strip()
+                    df_out = df_out[
+                        df_out["bus_no"].str.contains(q, na=False)
+                        | df_out["via_dest"].str.contains(q, na=False)
+                    ]
+                df_out = df_out.sort_values(by="time").rename(columns={
+                    "direction": "방면",
+                    "bus_no": "번호",
+                    "time": "출발시간",
+                    "origin": "출발지",
+                    "via_dest": "주요 경유지 · 행선지",
+                })
+                st.dataframe(df_out[["방면", "번호", "출발시간", "출발지", "주요 경유지 · 행선지"]], hide_index=True, **STRETCH_KW)
 
-        with t_tab3:
-            df_hub = pd.DataFrame(HUB_SCHEDULES)
-            hub_secs = ["전체 구간"] + list(dict.fromkeys(df_hub["section"].tolist()))
-            sel_hub = st.selectbox("거점 구간", hub_secs, key="tbl_hub_sec")
-            if sel_hub != "전체 구간":
-                df_hub = df_hub[df_hub["section"] == sel_hub]
-            df_hub = df_hub.sort_values(by="time").rename(columns={
-                "section": "구간",
-                "time": "출발시간",
-                "bus_no": "번호",
-                "via_dest": "행선지",
-            })
-            st.dataframe(df_hub[["구간", "출발시간", "번호", "행선지"]], hide_index=True, **STRETCH_KW)
+            with t_tab2:
+                df_in = pd.DataFrame(INBOUND_RURAL)
+                in_dirs = ["전체 구간"] + sorted(df_in["direction"].unique().tolist())
+                sel_in_dir = st.selectbox("구간 선택", in_dirs, key="tbl_in_dir")
+                if sel_in_dir != "전체 구간":
+                    df_in = df_in[df_in["direction"] == sel_in_dir]
+                df_in = df_in.sort_values(by="time").rename(columns={
+                    "direction": "운행 구간",
+                    "time": "종점 출발시간",
+                    "via_dest": "비고",
+                })
+                st.dataframe(df_in[["운행 구간", "종점 출발시간", "비고"]], hide_index=True, **STRETCH_KW)
 
-        with t_tab4:
-            df_po = pd.DataFrame(PUB_OUTBOUND).sort_values(by="time").rename(columns={
-                "direction": "방면",
-                "bus_no": "번호",
-                "time": "기점 출발",
-                "origin": "출발지",
-                "via_dest": "경유지",
-            })
-            st.dataframe(df_po[["방면", "번호", "기점 출발", "출발지", "경유지"]], hide_index=True, **STRETCH_KW)
+            with t_tab3:
+                df_hub = pd.DataFrame(HUB_SCHEDULES)
+                hub_secs = ["전체 구간"] + list(dict.fromkeys(df_hub["section"].tolist()))
+                sel_hub = st.selectbox("거점 구간", hub_secs, key="tbl_hub_sec")
+                if sel_hub != "전체 구간":
+                    df_hub = df_hub[df_hub["section"] == sel_hub]
+                df_hub = df_hub.sort_values(by="time").rename(columns={
+                    "section": "구간",
+                    "time": "출발시간",
+                    "bus_no": "번호",
+                    "via_dest": "행선지",
+                })
+                st.dataframe(df_hub[["구간", "출발시간", "번호", "행선지"]], hide_index=True, **STRETCH_KW)
 
-        with t_tab5:
-            st.dataframe(pd.DataFrame(INTERCITY_SCHEDULES), hide_index=True, **STRETCH_KW)
+            with t_tab4:
+                df_po = pd.DataFrame(PUB_OUTBOUND).sort_values(by="time").rename(columns={
+                    "direction": "방면",
+                    "bus_no": "번호",
+                    "time": "기점 출발",
+                    "origin": "출발지",
+                    "via_dest": "경유지",
+                })
+                st.dataframe(df_po[["방면", "번호", "기점 출발", "출발지", "경유지"]], hide_index=True, **STRETCH_KW)
+
+            with t_tab5:
+                st.caption("대전광역시 외곽버스 34번 (서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소 · 2026. 2. 26 기준)")
+                df_t34_sub = pd.DataFrame(DAEJEON_34_TIMETABLE).rename(columns={
+                    "seq": "회차",
+                    "seonambu": "서남부터미널 출발",
+                    "daedunsan": "대둔산휴게소 출발",
+                })
+                st.dataframe(df_t34_sub, hide_index=True, **STRETCH_KW)
+
+            with t_tab6:
+                st.dataframe(pd.DataFrame(INTERCITY_SCHEDULES), hide_index=True, **STRETCH_KW)
