@@ -3215,18 +3215,28 @@ def toggle_flag(key: str):
 
 
 def set_active_mode(mode_name: str):
+    st.session_state.app_section = APP_SECTION_GEUMSAN
     st.session_state.active_mode = mode_name
 
 
 def switch_app_section(sec_name: str):
     st.session_state.app_section = sec_name
-    st.session_state.app_section_radio = sec_name
+
+
+def set_dj34_direction(d_key: str):
+    """대전 34번 운행 방향 버튼 전환 콜백"""
+    st.session_state.dj34_dir = d_key
+    if d_key == "to_daejeon":
+        st.session_state.dj34_origin = "진산"
+        st.session_state.dj34_dest = "서남부터미널종점"
+    else:
+        st.session_state.dj34_origin = "대전서남부터미널"
+        st.session_state.dj34_dest = "진산"
 
 
 def apply_dj34_preset(dir_key: str, origin_name: str, dest_name: str):
     """대전 34번 자주 타는 구간 원터치 설정"""
     st.session_state.app_section = APP_SECTION_DJ34
-    st.session_state.app_section_radio = APP_SECTION_DJ34
     st.session_state.dj34_dir = dir_key
     st.session_state.dj34_origin = origin_name
     st.session_state.dj34_dest = dest_name
@@ -3235,7 +3245,6 @@ def apply_dj34_preset(dir_key: str, origin_name: str, dest_name: str):
 def apply_preset(origin: str, dest: str, bno: str | None):
     """대표 구간 및 즐겨찾기 원터치 적용"""
     st.session_state.app_section = APP_SECTION_GEUMSAN
-    st.session_state.app_section_radio = APP_SECTION_GEUMSAN
     st.session_state.origin_stop = origin
     st.session_state.dest_stop = dest
     if bno:
@@ -3565,6 +3574,42 @@ section[data-testid="stSidebar"] {{
     font-size: 0.86rem;
     margin: 3px;
 }}
+/* 웹사이트 메뉴바 & 모바일 엄지 터치 최적화 버튼 스타일 */
+div.stButton > button {{
+    min-height: 48px !important;
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+    font-size: 0.96rem !important;
+    padding: 0.55rem 0.9rem !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+    transition: all 0.15s ease !important;
+}}
+div.stButton > button[kind="secondary"] {{
+    background-color: #FFFFFF !important;
+    border: 1.5px solid #CBD5E1 !important;
+    color: #1E293B !important;
+}}
+div.stButton > button[kind="secondary"]:hover {{
+    border-color: #2563EB !important;
+    color: #2563EB !important;
+    background-color: #EFF6FF !important;
+}}
+div.stButton > button[kind="primary"] {{
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+}}
+/* 휴대폰 화면에서도 상단 메뉴 버튼들이 2열 그리드로 깔끔하게 정렬 */
+@media (max-width: 640px) {{
+    div[data-testid="stHorizontalBlock"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }}
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+        flex: 1 1 calc(50% - 8px) !important;
+        min-width: 135px !important;
+    }}
+}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -3580,18 +3625,29 @@ all_stops = get_sorted_stop_options()
 with st.sidebar:
     st.markdown("### 🚏 버스 안내 메뉴")
 
-    # 맨 위에서 1초 만에 구분되는 2개 전용 탭 스위치!
-    if "app_section_radio" not in st.session_state:
-        st.session_state.app_section_radio = st.session_state.app_section
-    sec_choice = st.radio(
-        "안내 구분 선택",
-        options=[APP_SECTION_GEUMSAN, APP_SECTION_DJ34],
-        key="app_section_radio",
-        label_visibility="collapsed",
+    # 동그라미 라디오 대신 진짜 웹사이트 좌측 메뉴판 버튼!
+    for m_label in ALL_MODES:
+        is_selected_mode = (
+            st.session_state.app_section == APP_SECTION_GEUMSAN
+            and st.session_state.active_mode == m_label
+        )
+        st.button(
+            m_label,
+            key=f"sb_menu_{m_label}",
+            type="primary" if is_selected_mode else "secondary",
+            on_click=set_active_mode,
+            args=(m_label,),
+            **STRETCH_KW,
+        )
+
+    st.button(
+        "🟢 대전 34번 외곽버스",
+        key="sb_menu_dj34",
+        type="primary" if st.session_state.app_section == APP_SECTION_DJ34 else "secondary",
+        on_click=switch_app_section,
+        args=(APP_SECTION_DJ34,),
+        **STRETCH_KW,
     )
-    if sec_choice != st.session_state.app_section:
-        st.session_state.app_section = sec_choice
-        st.rerun()
 
     st.divider()
 
@@ -3784,25 +3840,22 @@ with st.sidebar:
         st.markdown('<div class="sb-section-title">🟢 대전 34번 구간 선택</div>', unsafe_allow_html=True)
         st.caption("서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소")
 
-        dir_choice = st.radio(
-            "운행 방향",
-            options=["to_daejeon", "to_daedun"],
-            index=0 if st.session_state.dj34_dir == "to_daejeon" else 1,
-            format_func=lambda k: (
-                "⬆️ 대전(서남부터미널) 가는 길"
-                if k == "to_daejeon"
-                else "⬇️ 금산(복수·진산·대둔산) 오는 길"
-            ),
+        st.button(
+            "⬆️ 대전(서남부터미널) 가는 길",
+            key="btn_dir_daejeon",
+            type="primary" if st.session_state.dj34_dir == "to_daejeon" else "secondary",
+            on_click=set_dj34_direction,
+            args=("to_daejeon",),
+            **STRETCH_KW,
         )
-        if dir_choice != st.session_state.dj34_dir:
-            st.session_state.dj34_dir = dir_choice
-            if dir_choice == "to_daejeon":
-                st.session_state.dj34_origin = "진산"
-                st.session_state.dj34_dest = "서남부터미널종점"
-            else:
-                st.session_state.dj34_origin = "대전서남부터미널"
-                st.session_state.dj34_dest = "진산"
-            st.rerun()
+        st.button(
+            "⬇️ 금산(복수·진산·대둔산) 오는 길",
+            key="btn_dir_daedun",
+            type="primary" if st.session_state.dj34_dir == "to_daedun" else "secondary",
+            on_click=set_dj34_direction,
+            args=("to_daedun",),
+            **STRETCH_KW,
+        )
 
         cur_stops_34 = (
             DAEJEON_34_STOPS_TO_DAEDUN
@@ -3819,6 +3872,7 @@ with st.sidebar:
             "1️⃣ 타는 정류장",
             options=board_opts,
             index=o34_idx,
+            key=f"sb_o34_{st.session_state.dj34_dir}_{st.session_state.dj34_origin}",
             format_func=lambda nm: f"{'⭐ ' if stop_map_34[nm]['hub'] else ''}{nm} ({stop_map_34[nm]['zone']})",
         )
         if sel_o34 != st.session_state.dj34_origin:
@@ -3837,6 +3891,7 @@ with st.sidebar:
             "2️⃣ 내리는 정류장",
             options=alight_opts,
             index=d34_idx,
+            key=f"sb_d34_{st.session_state.dj34_dir}_{st.session_state.dj34_dest}",
             format_func=lambda nm: f"{'🏁 ' if stop_map_34[nm]['hub'] else ''}{nm} ({stop_map_34[nm]['zone']})",
         )
         if sel_d34 != st.session_state.dj34_dest:
@@ -3884,11 +3939,29 @@ with st.sidebar:
         else st.expander("⚙️ 시각 · 혼잡 설정")
     )
     with _cfg_box:
-        sim_mode = st.radio(
-            "위치 안내 기준",
-            ["실시간 스마트 추적 (언제든 주행 확인)", "공식 시간표 정각 연동"],
-            index=0,
-        )
+        if "sim_mode" not in st.session_state:
+            st.session_state.sim_mode = "실시간 스마트 추적 (언제든 주행 확인)"
+        st.caption("위치 안내 기준")
+        sim_c1, sim_c2 = st.columns(2)
+        with sim_c1:
+            if st.button(
+                "📡 스마트 주행",
+                key="btn_sim_smart",
+                type="primary" if st.session_state.sim_mode.startswith("실시간") else "secondary",
+                **STRETCH_KW,
+            ):
+                st.session_state.sim_mode = "실시간 스마트 추적 (언제든 주행 확인)"
+                st.rerun()
+        with sim_c2:
+            if st.button(
+                "🕒 시간표 정각",
+                key="btn_sim_exact",
+                type="primary" if st.session_state.sim_mode.startswith("공식") else "secondary",
+                **STRETCH_KW,
+            ):
+                st.session_state.sim_mode = "공식 시간표 정각 연동"
+                st.rerun()
+        sim_mode = st.session_state.sim_mode
         traffic_scenario = st.selectbox(
             "도로 소통 상황",
             [
@@ -3906,6 +3979,194 @@ with st.sidebar:
             now_dt = kst_today.replace(hour=picked_t.hour, minute=picked_t.minute, second=0)
         else:
             now_dt = get_kst_now()
+
+
+# =============================================================================
+# [상단 사이트 메뉴바] 휴대폰·PC 어디서든 원터치로 전환되는 네비게이션 탭 버튼
+# =============================================================================
+nav_c1, nav_c2 = st.columns(2)
+with nav_c1:
+    st.button(
+        "🔵 금산 군내 · 공공형 버스",
+        key="top_site_nav_geumsan",
+        type="primary" if st.session_state.app_section == APP_SECTION_GEUMSAN else "secondary",
+        on_click=switch_app_section,
+        args=(APP_SECTION_GEUMSAN,),
+        **STRETCH_KW,
+    )
+with nav_c2:
+    st.button(
+        "🟢 대전 34번 외곽버스 (복수·진산)",
+        key="top_site_nav_dj34",
+        type="primary" if st.session_state.app_section == APP_SECTION_DJ34 else "secondary",
+        on_click=switch_app_section,
+        args=(APP_SECTION_DJ34,),
+        **STRETCH_KW,
+    )
+
+# 휴대폰에서는 사이드바가 접혀 있어도 바로 정류장을 고를 수 있도록 빠른 구간 선택 팝오버 제공!
+if st.session_state.app_section == APP_SECTION_GEUMSAN:
+    _mob_label = (
+        f"🚏 정류장 · 버스 빠른 선택 ({st.session_state.origin_stop} ➔ {st.session_state.dest_stop})"
+        if (st.session_state.origin_stop and st.session_state.dest_stop)
+        else "🚏 정류장 · 버스 빠른 선택 (휴대폰에서 바로 터치!)"
+    )
+    _mob_box = (
+        st.popover(_mob_label, **STRETCH_KW)
+        if hasattr(st, "popover")
+        else st.expander(_mob_label)
+    )
+    with _mob_box:
+        st.caption("휴대폰에서 왼쪽 메뉴를 열지 않고도 바로 출발지·도착지·버스를 고를 수 있습니다.")
+        m_s1_opts = [None] + all_stops
+        m_s1_idx = m_s1_opts.index(st.session_state.origin_stop) if st.session_state.origin_stop in m_s1_opts else 0
+        m_sel_o = st.selectbox(
+            "1️⃣ 출발 정류장",
+            options=m_s1_opts,
+            index=m_s1_idx,
+            key="mob_origin_sel",
+            format_func=lambda x: "출발지를 선택하세요" if x is None else format_stop_label(x),
+        )
+        if m_sel_o != st.session_state.origin_stop:
+            st.session_state.origin_stop = m_sel_o
+            if st.session_state.dest_stop == m_sel_o:
+                st.session_state.dest_stop = None
+                st.session_state.bus_no = None
+            st.rerun()
+
+        if st.session_state.origin_stop is None:
+            st.selectbox("2️⃣ 도착 정류장", options=["🔒 출발지를 먼저 선택하세요"], disabled=True, key="mob_dest_locked")
+        else:
+            m_d_reach = get_directly_reachable_stops(st.session_state.origin_stop)
+            m_d_list = [s for s in all_stops if s != st.session_state.origin_stop and s in m_d_reach]
+            m_t_list = [s for s in all_stops if s != st.session_state.origin_stop and s not in m_d_reach]
+            m_s2_opts = [None] + m_d_list + m_t_list
+            m_s2_idx = m_s2_opts.index(st.session_state.dest_stop) if st.session_state.dest_stop in m_s2_opts else 0
+            m_sel_d = st.selectbox(
+                "2️⃣ 도착 정류장",
+                options=m_s2_opts,
+                index=m_s2_idx,
+                key="mob_dest_sel",
+                format_func=lambda x: "목적지를 선택하세요" if x is None else format_stop_label(x, m_d_reach),
+            )
+            if m_sel_d != st.session_state.dest_stop:
+                st.session_state.dest_stop = m_sel_d
+                if st.session_state.bus_no and m_sel_d is None:
+                    st.session_state.bus_no = None
+                st.rerun()
+
+        if st.session_state.origin_stop is None or st.session_state.dest_stop is None:
+            st.selectbox("3️⃣ 버스 번호", options=["🔒 도착지를 먼저 선택하세요"], disabled=True, key="mob_bus_locked")
+        else:
+            m_dir_cands = find_direct_buses(st.session_state.origin_stop, st.session_state.dest_stop)
+            m_dir_bnos = [d["bus_no"] for d in m_dir_cands]
+            m_org_bnos = [
+                b for b, inf in BUS_ROUTES.items()
+                if (st.session_state.origin_stop in inf["stops"]) and (b not in m_dir_bnos)
+            ]
+            m_oth_bnos = [
+                b for b in sorted(BUS_ROUTES.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+                if b not in m_dir_bnos and b not in m_org_bnos
+            ]
+            m_s3_opts = [None] + m_dir_bnos + m_org_bnos + m_oth_bnos
+            m_s3_idx = m_s3_opts.index(st.session_state.bus_no) if st.session_state.bus_no in m_s3_opts else 0
+            m_sel_b = st.selectbox(
+                "3️⃣ 버스 번호",
+                options=m_s3_opts,
+                index=m_s3_idx,
+                key="mob_bus_sel",
+                format_func=lambda b: (
+                    "버스 번호 선택 (모르면 아래 추천 클릭)"
+                    if b is None
+                    else (
+                        f"✅ {b}번 (직통 · {BUS_ROUTES[b]['region']})"
+                        if b in m_dir_bnos
+                        else f"🚌 {b}번 ({BUS_ROUTES[b]['region']})"
+                    )
+                ),
+            )
+            if m_sel_b != st.session_state.bus_no:
+                st.session_state.bus_no = m_sel_b
+                st.rerun()
+
+        mb1, mb2 = st.columns(2)
+        with mb1:
+            st.button(
+                "🎯 버스 추천받기",
+                key="mob_rec_btn",
+                type="primary",
+                disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
+                on_click=toggle_recommend_panel,
+                **STRETCH_KW,
+            )
+        with mb2:
+            st.button(
+                "🔄 출발↔도착 바꾸기",
+                key="mob_swap_btn",
+                disabled=(st.session_state.origin_stop is None or st.session_state.dest_stop is None),
+                on_click=swap_origin_dest,
+                **STRETCH_KW,
+            )
+else:
+    _mob34_label = f"🚏 34번 방향 · 정류장 빠른 선택 ({st.session_state.dj34_origin} ➔ {st.session_state.dj34_dest})"
+    _mob34_box = (
+        st.popover(_mob34_label, **STRETCH_KW)
+        if hasattr(st, "popover")
+        else st.expander(_mob34_label)
+    )
+    with _mob34_box:
+        md1, md2 = st.columns(2)
+        with md1:
+            st.button(
+                "⬆️ 대전 가는 길",
+                key="mob_dir_dj",
+                type="primary" if st.session_state.dj34_dir == "to_daejeon" else "secondary",
+                on_click=set_dj34_direction,
+                args=("to_daejeon",),
+                **STRETCH_KW,
+            )
+        with md2:
+            st.button(
+                "⬇️ 복수·진산 오는 길",
+                key="mob_dir_dd",
+                type="primary" if st.session_state.dj34_dir == "to_daedun" else "secondary",
+                on_click=set_dj34_direction,
+                args=("to_daedun",),
+                **STRETCH_KW,
+            )
+        m_stops_34 = (
+            DAEJEON_34_STOPS_TO_DAEDUN
+            if st.session_state.dj34_dir == "to_daedun"
+            else DAEJEON_34_STOPS_TO_DAEJEON
+        )
+        m_names_34 = [s["name"] for s in m_stops_34]
+        m_map_34 = {s["name"]: s for s in m_stops_34}
+        m_b_opts = m_names_34[:-1]
+        m_o_idx = m_b_opts.index(st.session_state.dj34_origin) if st.session_state.dj34_origin in m_b_opts else 0
+        m_sel_o34 = st.selectbox(
+            "1️⃣ 타는 정류장",
+            options=m_b_opts,
+            index=m_o_idx,
+            key=f"mob_o34_{st.session_state.dj34_dir}_{st.session_state.dj34_origin}",
+            format_func=lambda nm: f"{'⭐ ' if m_map_34[nm]['hub'] else ''}{nm} ({m_map_34[nm]['zone']})",
+        )
+        if m_sel_o34 != st.session_state.dj34_origin:
+            st.session_state.dj34_origin = m_sel_o34
+            st.rerun()
+
+        m_after = m_names_34.index(st.session_state.dj34_origin) + 1
+        m_a_opts = m_names_34[m_after:]
+        m_d_idx = m_a_opts.index(st.session_state.dj34_dest) if st.session_state.dj34_dest in m_a_opts else len(m_a_opts) - 1
+        m_sel_d34 = st.selectbox(
+            "2️⃣ 내리는 정류장",
+            options=m_a_opts,
+            index=m_d_idx,
+            key=f"mob_d34_{st.session_state.dj34_dir}_{st.session_state.dj34_dest}",
+            format_func=lambda nm: f"{'🏁 ' if m_map_34[nm]['hub'] else ''}{nm} ({m_map_34[nm]['zone']})",
+        )
+        if m_sel_d34 != st.session_state.dj34_dest:
+            st.session_state.dj34_dest = m_sel_d34
+            st.rerun()
 
 
 # =============================================================================
@@ -4146,10 +4407,8 @@ if st.session_state.app_section == APP_SECTION_DJ34:
 # [메인 화면 2] 🔵 금산군 농어촌 · 공공형 버스 안내 화면
 # =============================================================================
 else:
-    top_h1, top_h2 = st.columns([4.1, 1.25])
-    with top_h1:
-        st.markdown(
-            f"""
+    st.markdown(
+        f"""
 <div class="slim-header">
   <div class="slim-title">🚌 금산군 농어촌 · 공공형 버스 안내</div>
   <div class="road-mini">
@@ -4161,16 +4420,8 @@ else:
   <div style="font-size:0.82rem; color:#64748B; font-weight:700;">🕒 {now_dt.strftime('%H:%M')} 기준</div>
 </div>
 """,
-            unsafe_allow_html=True,
-        )
-    with top_h2:
-        st.button(
-            "🟢 대전 34번 버스 보기",
-            on_click=switch_app_section,
-            args=(APP_SECTION_DJ34,),
-            help="서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소를 오가는 대전 34번 외곽버스 전용 화면으로 이동합니다.",
-            **STRETCH_KW,
-        )
+        unsafe_allow_html=True,
+    )
 
     current_status = None
     if st.session_state.bus_no:
