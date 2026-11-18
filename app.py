@@ -1,24 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-금산군 농어촌·공공형 버스 & 대전 외곽버스 34번 심플 시간표 안내 앱
-- 단일 화면 · 모바일 큰 버튼 최적화 · 거짓 실시간/정체 시뮬레이션 전면 제거
-- 데이터 기준:
-  1) 금산군 농어촌·공공형 버스 공식 시간표 (2026. 7. 1. 시행)
-  2) 대전광역시 외곽버스 34번 공식 시간표 및 정류장 (2026. 2. 26. 기준, 서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소)
+금산군 농어촌·공공형 버스 & 대전 외곽버스 34번 실시간 위치 · 시간표 안내 앱
+- 공공데이터포털 TAGO API 연동:
+  1) 버스위치정보 (BusLcInfoInqireService) — 실시간 운행 차량 GPS · 방금 통과 정류장 지도 표시
+  2) 버스도착정보 (ArvlInfoInqireService) — 활용신청 활성화 시 실시간 도착 예정(분/정거장 수) 자동 전환
+- 심야·배차 대기 시 공식 기점 시간표(금산군 2026.7.1 / 대전 34번 2026.2.26 기준)로 자동 안내
+- 불필요한 더미 데이터 및 중복 위젯 제거 · 아기자기하고 정돈된 카드 & 실제 지도(Leaflet) UI
 """
 
 import html
 import json
 import math
+import os
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="금산 · 대전34번 버스 시간표",
+    page_title="금산 · 대전34 버스 안내",
     page_icon="🚌",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -35,6 +38,9 @@ def _supports_width_stretch() -> bool:
 
 STRETCH_KW = {"width": "stretch"} if _supports_width_stretch() else {"use_container_width": True}
 
+# =============================================================================
+# 1. 정류장 · 노선 · 공식 시간표 데이터
+# =============================================================================
 NODES = {'금산읍': {'x': 56, 'y': 18, 'hub': True, 'region': '금산읍(시외·군내터미널)'},
  '제원': {'x': 68, 'y': 13, 'hub': True, 'region': '제원면'},
  '군북': {'x': 75, 'y': 35, 'hub': True, 'region': '군북면'},
@@ -575,7 +581,19 @@ BUS_ROUTES = {'15': {'name': '15번 (공공형)',
  '920': {'name': '920번',
          'category': '농어촌버스',
          'region': '마전·서대산방면 대표노선',
-         'stops': ['금산읍', '의총리', '새터', '하신', '추정', '마전', '장대리', '자부리', '비례리', '신평', '성당리', '서대산', '군북'],
+         'stops': ['금산읍',
+                   '의총리',
+                   '새터',
+                   '하신',
+                   '추정',
+                   '마전',
+                   '장대리',
+                   '자부리',
+                   '비례리',
+                   '신평',
+                   '성당리',
+                   '서대산',
+                   '군북'],
          'out_times': ['06:40', '07:00', '07:40', '10:00', '12:00', '16:00', '18:10'],
          'in_times': ['07:17',
                       '08:00',
@@ -604,1483 +622,1266 @@ BUS_ROUTES = {'15': {'name': '15번 (공공형)',
          'in_times': ['10:30', '10:50'],
          'desc': '금산읍 ↔ 원터·진산·마전'}}
 
-OUTBOUND_RURAL = [{'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '신안사,화골,재두',
-  'time': '06:00',
-  'bus_no': '210'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,수통리,라천',
-  'time': '06:00',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '상탄,진산',
-  'time': '06:00',
-  'bus_no': '730'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '사기소,신정,평대리',
-  'time': '06:00',
-  'bus_no': '540'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '석동,건천리,대양리',
-  'time': '06:00',
-  'bus_no': '630'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '성당리',
-  'time': '06:40',
-  'bus_no': '920'},
- {'category': '농어촌버스',
-  'direction': '복수방면',
-  'origin': '금산읍',
-  'via_dest': '상지말,알미,못안, 둑실,초미동,목소리',
-  'time': '06:30',
-  'bus_no': '800'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '산안2,상곡2,보광리',
-  'time': '06:00',
-  'bus_no': '440'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,압수,어재리',
-  'time': '06:10',
-  'bus_no': '320'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '도산,신대리,백암',
-  'time': '06:10',
-  'bus_no': '810'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신정,신동리',
-  'time': '07:10',
-  'bus_no': '530'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '광대정,흑암리,음대리,매곡리',
-  'time': '06:20',
-  'bus_no': '670'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '마전,군북,제원',
-  'time': '07:55',
-  'bus_no': '420'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '원골,용화,대산',
-  'time': '06:05',
-  'bus_no': '230'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '상평당,가덕',
-  'time': '06:20',
-  'bus_no': '360'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '석막,건천리',
-  'time': '06:20',
-  'bus_no': '721'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '음전,원동,평대리,사미리',
-  'time': '08:30',
-  'bus_no': '522'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '윗관운리,활골',
-  'time': '08:10',
-  'bus_no': '610'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '마전,태고사,도산',
-  'time': '08:15',
-  'bus_no': '760'},
- {'category': '농어촌버스',
-  'direction': '복수방면',
-  'origin': '금산읍',
-  'via_dest': '상지말,알미,못안, 둑실,초미동,목소리',
-  'time': '10:10',
-  'bus_no': '800'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '군북,마전,진산',
-  'time': '06:40',
-  'bus_no': '740'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '호미동,삼태리',
-  'time': '07:15',
-  'bus_no': '500'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '도산,가든',
-  'time': '06:50',
-  'bus_no': '760'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신동,수천리',
-  'time': '08:50',
-  'bus_no': '550'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '석동,역평리',
-  'time': '08:35',
-  'bus_no': '640'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '마전,못골,대암리',
-  'time': '08:50',
-  'bus_no': '900'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '명곡리',
-  'time': '07:15',
-  'bus_no': '200'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '금고리,갈티,평촌',
-  'time': '07:40',
-  'bus_no': '340'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '엄정,석막',
-  'time': '07:40',
-  'bus_no': '710'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신정,신천',
-  'time': '09:55',
-  'bus_no': '510'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '양대,대양리,시장',
-  'time': '10:10',
-  'bus_no': '650'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '서대산',
-  'time': '10:00',
-  'bus_no': '920'},
- {'category': '농어촌버스',
-  'direction': '복수방면',
-  'origin': '금산읍',
-  'via_dest': '상지말,알미,못안, 가칠리,둑실,초미동, 목소리',
-  'time': '18:30',
-  'bus_no': '800'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '가선리',
-  'time': '07:40',
-  'bus_no': '250'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,신촌,백암',
-  'time': '08:25',
-  'bus_no': '310'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '당디,신대',
-  'time': '08:10',
-  'bus_no': '810'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신정,사기소,시장',
-  'time': '12:00',
-  'bus_no': '540'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '석동,건천리,시장',
-  'time': '11:40',
-  'bus_no': '630'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '마전,군북',
-  'time': '11:00',
-  'bus_no': '930'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '산안2,상곡2,보광리',
-  'time': '08:10',
-  'bus_no': '440'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,수통리,예미2,물페기',
-  'time': '08:35',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '상탄,도산,원터',
-  'time': '09:30',
-  'bus_no': '760'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '평대,원동리,음대',
-  'time': '12:20',
-  'bus_no': '520'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '양대,활골,대양리,시장',
-  'time': '13:05',
-  'bus_no': '650'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '마전,못골,진산',
-  'time': '11:40',
-  'bus_no': '750'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '닥실,금성리,용화,천내',
-  'time': '08:35',
-  'bus_no': '220'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,상평당',
-  'time': '08:40',
-  'bus_no': '360'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '원터,마전',
-  'time': '10:00',
-  'bus_no': '940'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신정,구시장',
-  'time': '14:00',
-  'bus_no': '510'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '매곡,양대,대양리',
-  'time': '13:50',
-  'bus_no': '650'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '서대산',
-  'time': '12:00',
-  'bus_no': '920'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '메데기,대산',
-  'time': '09:40',
-  'bus_no': '430'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,어재리',
-  'time': '09:00',
-  'bus_no': '320'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '만악,석막',
-  'time': '11:30',
-  'bus_no': '710'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신천,수천리',
-  'time': '14:40',
-  'bus_no': '550'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '매곡,윗관운리',
-  'time': '14:35',
-  'bus_no': '620'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '장대리,진산',
-  'time': '13:10',
-  'bus_no': '750'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '가선리',
-  'time': '10:00',
-  'bus_no': '250'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '수통리,관천,시장',
-  'time': '10:15',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '원터,신대,도산',
-  'time': '12:10',
-  'bus_no': '810'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '평대,원동,음대리',
-  'time': '15:50',
-  'bus_no': '520'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '석동,역평리',
-  'time': '15:20',
-  'bus_no': '640'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '대암리,마전,군북',
-  'time': '14:05',
-  'bus_no': '930'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '명곡리',
-  'time': '10:10',
-  'bus_no': '200'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,백일사,갈티,가덕',
-  'time': '10:30',
-  'bus_no': '350'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '화림,진산',
-  'time': '12:45',
-  'bus_no': '740'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '구시장,신동',
-  'time': '16:30',
-  'bus_no': '530'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '시장,석동,역평리',
-  'time': '16:30',
-  'bus_no': '640'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '서대산',
-  'time': '16:00',
-  'bus_no': '920'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '용화,금성리,닥실',
-  'time': '10:10',
-  'bus_no': '220'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '신촌,어재리,이정리',
-  'time': '11:10',
-  'bus_no': '320'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '건천리',
-  'time': '13:30',
-  'bus_no': '720'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '초현,원동',
-  'time': '17:05',
-  'bus_no': '520'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '양대,광대정,활골',
-  'time': '17:50',
-  'bus_no': '610'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '군북,진산,건천리',
-  'time': '17:30',
-  'bus_no': '930'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '군북,조정리',
-  'time': '10:30',
-  'bus_no': '420'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,백일사',
-  'time': '12:20',
-  'bus_no': '350'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '만악1,신대,도산',
-  'time': '13:40',
-  'bus_no': '810'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신정,사기소',
-  'time': '18:15',
-  'bus_no': '540'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '석동,건천리',
-  'time': '18:10',
-  'bus_no': '630'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '서대산',
-  'time': '18:10',
-  'bus_no': '920'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '산안2,상곡2,안보광리',
-  'time': '11:45',
-  'bus_no': '440'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,예미2,수통리',
-  'time': '12:30',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '상촌,엄정리,진산',
-  'time': '14:20',
-  'bus_no': '730'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '덕천,평대,원동',
-  'time': '18:50',
-  'bus_no': '520'},
- {'category': '농어촌버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '양대,대양리',
-  'time': '19:00',
-  'bus_no': '650'},
- {'category': '농어촌버스',
-  'direction': '마전방면',
-  'origin': '금산읍',
-  'via_dest': '마전',
-  'time': '19:45',
-  'bus_no': '900'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '용화,금성,천내',
-  'time': '12:05',
-  'bus_no': '230'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '라천,가덕,관천',
-  'time': '13:20',
-  'bus_no': '300'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '태고사,도산',
-  'time': '15:00',
-  'bus_no': '760'},
- {'category': '농어촌버스',
-  'direction': '남일방면',
-  'origin': '금산읍',
-  'via_dest': '신동',
-  'time': '19:30',
-  'bus_no': '530'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '가선리',
-  'time': '13:00',
-  'bus_no': '250'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,상평당',
-  'time': '13:40',
-  'bus_no': '360'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '가든,도산',
-  'time': '15:40',
-  'bus_no': '760'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '명곡리',
-  'time': '13:00',
-  'bus_no': '200'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,백암,수통리',
-  'time': '14:00',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '상탄,엄정리,목골',
-  'time': '16:20',
-  'bus_no': '730'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '메데기',
-  'time': '13:30',
-  'bus_no': '430'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '호미동',
-  'time': '14:10',
-  'bus_no': '500'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '석막리',
-  'time': '17:00',
-  'bus_no': '710'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '대산,신안사',
-  'time': '13:50',
-  'bus_no': '210'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,어재리',
-  'time': '15:00',
-  'bus_no': '320'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '당디,지방리,신대',
-  'time': '18:05',
-  'bus_no': '810'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '서당골,와정',
-  'time': '07:25',
-  'bus_no': '102'},
- {'category': '농어촌버스',
-  'direction': '초미동방면',
-  'origin': '금산읍',
-  'via_dest': '마전,서대리,군북',
-  'time': '08:50',
-  'bus_no': '910'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '용화,금성리',
-  'time': '14:45',
-  'bus_no': '220'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,갈티,백일사',
-  'time': '15:30',
-  'bus_no': '350'},
- {'category': '농어촌버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '도산',
-  'time': '19:10',
-  'bus_no': '760'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '어동골',
-  'time': '08:10',
-  'bus_no': '120'},
- {'category': '농어촌버스',
-  'direction': '초미동방면',
-  'origin': '금산읍',
-  'via_dest': '초미동,마전',
-  'time': '11:30',
-  'bus_no': '910'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '천내',
-  'time': '15:00',
-  'bus_no': '240'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '이정리,물페기,신촌',
-  'time': '16:00',
-  'bus_no': '310'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '서당골',
-  'time': '10:20',
-  'bus_no': '100'},
- {'category': '농어촌버스',
-  'direction': '초미동방면',
-  'origin': '금산읍',
-  'via_dest': '초미동,마전,진산',
-  'time': '12:50',
-  'bus_no': '910'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '군북',
-  'time': '15:45',
-  'bus_no': '420'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '삼태리,수통리',
-  'time': '16:50',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '초현,부남, 장안리',
-  'origin': '금산읍',
-  'via_dest': '장안리',
-  'time': '10:50',
-  'bus_no': '560'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '와정,하금',
-  'time': '11:05',
-  'bus_no': '600'},
- {'category': '농어촌버스',
-  'direction': '초미동방면',
-  'origin': '금산읍',
-  'via_dest': '초미동,마전',
-  'time': '16:40',
-  'bus_no': '910'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '가선리',
-  'time': '16:10',
-  'bus_no': '250'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '관천,상평당',
-  'time': '17:40',
-  'bus_no': '360'},
- {'category': '농어촌버스',
-  'direction': '초현,부남, 장안리',
-  'origin': '금산읍',
-  'via_dest': '사미리,장안리',
-  'time': '14:20',
-  'bus_no': '560'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '서당골,어동골',
-  'time': '12:10',
-  'bus_no': '100'},
- {'category': '농어촌버스',
-  'direction': '초미동방면',
-  'origin': '금산읍',
-  'via_dest': '초미동,마전',
-  'time': '19:30',
-  'bus_no': '910'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '윗배원이,명곡리',
-  'time': '16:20',
-  'bus_no': '200'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,압수,어재리',
-  'time': '17:55',
-  'bus_no': '320'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '와정',
-  'time': '14:00',
-  'bus_no': '110'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '군북',
-  'time': '16:30',
-  'bus_no': '420'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '가덕,금고리,수통리',
-  'time': '19:00',
-  'bus_no': '330'},
- {'category': '농어촌버스',
-  'direction': '마수방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '새말,마수,파초,음전',
-  'time': '06:10',
-  'bus_no': '170'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '서당골',
-  'time': '15:00',
-  'bus_no': '100'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '산안2,상곡2,안보광리',
-  'time': '17:40',
-  'bus_no': '440'},
- {'category': '농어촌버스',
-  'direction': '부리방면',
-  'origin': '금산읍',
-  'via_dest': '창평,어재리',
-  'time': '19:25',
-  'bus_no': '320'},
- {'category': '농어촌버스',
-  'direction': '마수방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '새말,마수,파초',
-  'time': '09:40',
-  'bus_no': '170'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '와정',
-  'time': '16:35',
-  'bus_no': '110'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '천내,닥실,금성리',
-  'time': '18:15',
-  'bus_no': '220'},
- {'category': '농어촌버스',
-  'direction': '마수방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '음전,장목골,두곡,마수,새말',
-  'time': '12:35',
-  'bus_no': '160'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '서당골,어동골',
-  'time': '18:10',
-  'bus_no': '100'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '가선리',
-  'time': '18:40',
-  'bus_no': '250'},
- {'category': '농어촌버스',
-  'direction': '마수방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '장목골,두곡,마수,새말',
-  'time': '15:30',
-  'bus_no': '160'},
- {'category': '농어촌버스',
-  'direction': '와정,하금',
-  'origin': '금산읍',
-  'via_dest': '와정,하금',
-  'time': '19:35',
-  'bus_no': '600'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '대산,재두,화골,신안사',
-  'time': '18:50',
-  'bus_no': '210'},
- {'category': '농어촌버스',
-  'direction': '마수방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '파초,마수,새말',
-  'time': '17:00',
-  'bus_no': '170'},
- {'category': '농어촌버스',
-  'direction': '대암리방면',
-  'origin': '마전',
-  'via_dest': '대암리',
-  'time': '09:35',
-  'bus_no': '900'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '산안2,보광리',
-  'time': '19:00',
-  'bus_no': '440'},
- {'category': '농어촌버스',
-  'direction': '마수방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '내부리,마수,파초',
-  'time': '18:30',
-  'bus_no': '400'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '용화',
-  'time': '19:20',
-  'bus_no': '230'},
- {'category': '농어촌버스',
-  'direction': '제원/군북방면',
-  'origin': '금산읍',
-  'via_dest': '명곡리',
-  'time': '19:40',
-  'bus_no': '200'},
- {'category': '농어촌버스',
-  'direction': '오룡방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '장목골,오룡,상지말',
-  'time': '06:20',
-  'bus_no': '160'},
- {'category': '농어촌버스',
-  'direction': '오룡방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '장목골,오룡,음전',
-  'time': '08:30',
-  'bus_no': '160'},
- {'category': '농어촌버스',
-  'direction': '오룡방면(금성면)',
-  'origin': '금산읍',
-  'via_dest': '오룡,장목골',
-  'time': '17:40',
-  'bus_no': '150'},
- {'category': '농어촌버스',
-  'direction': '내부리방면',
-  'origin': '금산읍',
-  'via_dest': '내부리',
-  'time': '07:20',
-  'bus_no': '400'},
- {'category': '농어촌버스',
-  'direction': '내부리방면',
-  'origin': '금산읍',
-  'via_dest': '새터가마실,내부리,의총리,청용안',
-  'time': '10:10',
-  'bus_no': '410'},
- {'category': '농어촌버스',
-  'direction': '내부리방면',
-  'origin': '금산읍',
-  'via_dest': '내부리',
-  'time': '13:25',
-  'bus_no': '400'},
- {'category': '농어촌버스',
-  'direction': '내부리방면',
-  'origin': '금산읍',
-  'via_dest': '청용안,의총리,내부리,새터가마실',
-  'time': '15:40',
-  'bus_no': '410'},
- {'category': '농어촌버스',
-  'direction': '상촌,상탄,엄정',
-  'origin': '금산읍',
-  'via_dest': '엄정,진산,석막리',
-  'time': '07:40',
-  'bus_no': '710'},
- {'category': '농어촌버스',
-  'direction': '상촌,상탄,엄정',
-  'origin': '금산읍',
-  'via_dest': '상촌,엄정리,목골,진산',
-  'time': '16:20',
-  'bus_no': '730'},
- {'category': '농어촌버스',
-  'direction': '상촌,상탄,엄정',
-  'origin': '금산읍',
-  'via_dest': '상탄,하엄정',
-  'time': '18:40',
-  'bus_no': '700'}]
+DAEJEON_34_META = {'bus_no': '34',
+ 'title': '대전광역시 외곽버스 34번',
+ 'operator': '대전버스 (인가대수 4대)',
+ 'interval': '40~55분 간격 (일 22회 운행)',
+ 'first_last': '첫차 06:00 · 막차 22:00 (양방향 동일)',
+ 'basis_date': '2026년 2월 26일 기준',
+ 'start_desc': '[출발] 대전 중구 유천동(서남부터미널기점) / [도착] 산성동(서남부터미널종점)',
+ 'end_desc': '충남 금산군 진산면 묵산리 (대둔산휴게소 · 배티재)'}
 
-INBOUND_RURAL = [{'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '06:25', 'via_dest': '원골 발 용화,대산경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '06:30', 'via_dest': '수통리 발 창평,라천경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '06:30', 'via_dest': '사기소 발 신정,평대경유'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '06:40', 'via_dest': '건천리 발 대양리경유 석동'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '07:00', 'via_dest': '건천리 발 진산(07:25),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '06:30', 'via_dest': '신안사 발 화골,재두경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '06:40', 'via_dest': '어재리 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '07:40', 'via_dest': '(신정경유)신동 발'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '06:40', 'via_dest': '광대정 발 흑암리,음대,매곡경유'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '08:30', 'via_dest': '석막 발 진산(08:50)'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '06:35', 'via_dest': '보광리발(산안,상곡경유),군북(07:05)'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '06:50', 'via_dest': '상평당 발 가덕경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '09:00', 'via_dest': '원동 발 평대,사미경유'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '09:10', 'via_dest': '(윗관운리경유)활골 발'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '12:20', 'via_dest': '석막 발 진산(12:50),마전'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '07:35', 'via_dest': '명곡리 발 제원(07:50)'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '07:30', 'via_dest': '호미동 발 삼태리경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '09:30', 'via_dest': '수천리 발 신동'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '09:10', 'via_dest': '역평 발 석동'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '14:25', 'via_dest': '건천리 발 진산(14:50),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '08:00', 'via_dest': '가선리 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '08:00', 'via_dest': '금고리 발 갈티,평촌(08:10),관천경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '10:25', 'via_dest': '신정 발 신천경유'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '10:50', 'via_dest': '대양리 발 양대,구시장'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '17:50', 'via_dest': '석막 발 진산(18:10),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '08:55', 'via_dest': '군북 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '09:00', 'via_dest': '신촌 발 창평,백암경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '12:40', 'via_dest': '사기소 발 구시장경유'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '12:30', 'via_dest': '건천리 발 석동,구시장'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '19:30', 'via_dest': '건천리 발 건천에서금산직진'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '09:00', 'via_dest': '금성리 발 용화1,2경유,천내경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '09:10', 'via_dest': '수통리 발 예미2,물페기,관천경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '12:50', 'via_dest': '원동 발 음대'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '14:10', 'via_dest': '(활골)대양리 발 양대,구시장'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '09:05', 'via_dest': '보광리 발 군북(09:20)'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '09:10', 'via_dest': '상평당 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '14:35', 'via_dest': '신정리 발 구시장'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '14:50', 'via_dest': '대양리 발 양대'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '10:10', 'via_dest': '메데기 발 군북(10:20) 대산경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '09:35', 'via_dest': '어재리 발 관천경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '15:25', 'via_dest': '수천리 발 신동'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '15:35', 'via_dest': '(매곡)윗관운리 발 양대'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '06:45', 'via_dest': '도산 발 백암,진산(07:15) 마전'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '10:30', 'via_dest': '가선리 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '10:55', 'via_dest': '수통발 관천,구시장경유'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '16:30', 'via_dest': '원동리 발 음대경유'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '15:55', 'via_dest': '역평 발 석동'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '07:40', 'via_dest': '도산 발 진산(08:00) 마전'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '10:30', 'via_dest': '명곡리 발 송림'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '11:05', 'via_dest': '백일사 발 갈티,가덕 창평'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '17:10', 'via_dest': '신동리 발'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '17:10', 'via_dest': '역평 발 석동'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '09:05', 'via_dest': '신대 발 진산(09:30),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '10:40', 'via_dest': '금성리 발 닥실경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '11:50', 'via_dest': '어재리발 이정리경유 관천'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '17:40', 'via_dest': '원동리 발'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '18:40', 'via_dest': '(광대정)활골 발 양대'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '09:30', 'via_dest': '도산 발 진산(09:50),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '11:10', 'via_dest': '조정리 발 군북경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '12:55', 'via_dest': '백일사 발 창평'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '18:55', 'via_dest': '(신정경유) 사기소 발'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '18:55', 'via_dest': '건천리 발 석동'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '10:35', 'via_dest': '도산 발 진산(10:55),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '12:35', 'via_dest': '금성리 발 닥실,천내경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '13:10', 'via_dest': '수통리 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '19:20', 'via_dest': '원동 발 평대경유'},
- {'category': '농어촌(종점발)', 'direction': '남이방면 ➡ 금산읍', 'time': '19:30', 'via_dest': '대양리 발 양대'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '13:10', 'via_dest': '신대 발 도산(13:35),진산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '13:00', 'via_dest': '보광리 발 군북경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '13:50', 'via_dest': '(라천가덕경유) 관천 발'},
- {'category': '농어촌(종점발)', 'direction': '남일방면 ➡ 금산읍', 'time': '20:00', 'via_dest': '신동리 발'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '14:45', 'via_dest': '신대 발 도산(15:10),진산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '13:25', 'via_dest': '가선리 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '14:20', 'via_dest': '상평당 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '16:00', 'via_dest': '도산 발 진산(16:20),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '13:25', 'via_dest': '명곡리 발 송림'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '14:30', 'via_dest': '호미동 발 황풍'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '16:50', 'via_dest': '도산 발 진산(17:10),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '14:05', 'via_dest': '메데기 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '14:50', 'via_dest': '수통리 발 창평'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '07:17', 'via_dest': '성당 발 마전까지'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '19:00', 'via_dest': '신대 발 진산(19:20),마전'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '14:30', 'via_dest': '신안사 발 대산경유'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '15:40', 'via_dest': '어재리 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '08:00', 'via_dest': '서대산 발 마전,군북'},
- {'category': '농어촌(종점발)', 'direction': '진산방면 ➡ 금산읍', 'time': '19:45', 'via_dest': '도산 발 진산(20:00),금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '15:10', 'via_dest': '용화2 발 금성리(15:15),올때용화로'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '16:05', 'via_dest': '백일사 발 창평'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '09:55', 'via_dest': '서대산 발 마전,군북'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '15:25', 'via_dest': '천내 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '16:40', 'via_dest': '신촌 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '10:45', 'via_dest': '서대산 발 마전,진산,금산'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '16:20', 'via_dest': '군북 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '17:35', 'via_dest': '수통리 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '07:40', 'via_dest': '서당골 발 와정경유'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '12:50', 'via_dest': '서대산 발 마전,금산'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '06:25', 'via_dest': '마수 파초,음전경유'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '16:35', 'via_dest': '가선리 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '18:20', 'via_dest': '상평당 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '14:40', 'via_dest': '서대산 발 마전,진산'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '06:40', 'via_dest': '장목골 발 오룡,상지말'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '08:25', 'via_dest': '어동골 발'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '16:50', 'via_dest': '명곡리 발 송림'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '18:35', 'via_dest': '어재리 발 창평'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '10:35', 'via_dest': '서당골 발'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '16:45', 'via_dest': '서대산 발 마전,금산'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '07:30', 'via_dest': '내부리 발'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '17:05', 'via_dest': '군북 발'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '19:40', 'via_dest': '수통리 발 관천'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '11:25', 'via_dest': '하금 발 와정'},
- {'category': '농어촌(종점발)', 'direction': '서대산 ➡ 금산', 'time': '19:00', 'via_dest': '서대산 발 마전,군북,내부리'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '08:50', 'via_dest': '장목골 발 오룡,음전경유'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '18:45', 'via_dest': '보광리 발 군북'},
- {'category': '농어촌(종점발)', 'direction': '부리방면 ➡ 금산읍', 'time': '19:55', 'via_dest': '어재리 발 창평'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '12:25', 'via_dest': '서당골 발 어동골경유'},
- {'category': '농어촌(종점발)',
-  'direction': '장목골,오룡,내부,마수 ➡ 금산',
-  'time': '10:20',
-  'via_dest': '새터가마실 발 내부리,의총리,청용안경유'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '18:45', 'via_dest': '금성리 발 닥실경유'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '14:15', 'via_dest': '와정 발'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '12:50', 'via_dest': '마수 새말경유'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '19:05', 'via_dest': '가선리 발'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '15:20', 'via_dest': '서당골 발'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '13:40', 'via_dest': '내부리 발'},
- {'category': '농어촌(종점발)',
-  'direction': '복수방면 ➡ 금산',
-  'time': '08:50',
-  'via_dest': '목소리,초미동, 둑실,가칠리,못안, 알미,상지말'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '19:30', 'via_dest': '신안사 발'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '16:50', 'via_dest': '와정 발'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '15:45', 'via_dest': '마수 새말경유'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '19:45', 'via_dest': '용화2 발'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '18:30', 'via_dest': '서당골 발 어동골경유'},
- {'category': '농어촌(종점발)', 'direction': '복수방면 ➡ 금산', 'time': '11:05', 'via_dest': '목소리,마전,초미동, 둑실,못안,알미,상지말'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '17:15', 'via_dest': '마수 새말경유'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '19:50', 'via_dest': '보광리 발 군북(20:02)'},
- {'category': '농어촌(종점발)', 'direction': '조정리 ➡ 금산', 'time': '11:10', 'via_dest': '조정리 발 군북'},
- {'category': '농어촌(종점발)', 'direction': '서당,어동,와정 ➡ 금산', 'time': '20:00', 'via_dest': '하금 발 와정'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '18:10', 'via_dest': '장목골 발'},
- {'category': '농어촌(종점발)', 'direction': '제원방면 ➡ 금산읍', 'time': '20:00', 'via_dest': '명곡리 발 송림'},
- {'category': '농어촌(종점발)', 'direction': '복수방면 ➡ 금산', 'time': '19:20', 'via_dest': '목소리,초미동,둑실, 못안,알미,상지말'},
- {'category': '농어촌(종점발)', 'direction': '장목골,오룡,내부,마수 ➡ 금산', 'time': '18:45', 'via_dest': '마수 파초경유'}]
+DAEJEON_34_TIMETABLE = [{'seq': 1, 'seonambu': '06:00', 'daedunsan': '06:00'},
+ {'seq': 2, 'seonambu': '06:45', 'daedunsan': '06:35'},
+ {'seq': 3, 'seonambu': '07:30', 'daedunsan': '07:15'},
+ {'seq': 4, 'seonambu': '08:10', 'daedunsan': '07:50'},
+ {'seq': 5, 'seonambu': '09:00', 'daedunsan': '08:40'},
+ {'seq': 6, 'seonambu': '09:45', 'daedunsan': '09:20'},
+ {'seq': 7, 'seonambu': '10:40', 'daedunsan': '10:05'},
+ {'seq': 8, 'seonambu': '11:20', 'daedunsan': '10:50'},
+ {'seq': 9, 'seonambu': '12:10', 'daedunsan': '11:45'},
+ {'seq': 10, 'seonambu': '12:55', 'daedunsan': '12:30'},
+ {'seq': 11, 'seonambu': '13:40', 'daedunsan': '13:20'},
+ {'seq': 12, 'seonambu': '14:30', 'daedunsan': '14:10'},
+ {'seq': 13, 'seonambu': '15:15', 'daedunsan': '14:55'},
+ {'seq': 14, 'seonambu': '16:00', 'daedunsan': '15:45'},
+ {'seq': 15, 'seonambu': '16:55', 'daedunsan': '16:35'},
+ {'seq': 16, 'seonambu': '17:45', 'daedunsan': '17:20'},
+ {'seq': 17, 'seonambu': '18:35', 'daedunsan': '18:10'},
+ {'seq': 18, 'seonambu': '19:20', 'daedunsan': '19:05'},
+ {'seq': 19, 'seonambu': '20:00', 'daedunsan': '19:50'},
+ {'seq': 20, 'seonambu': '20:40', 'daedunsan': '20:35'},
+ {'seq': 21, 'seonambu': '21:20', 'daedunsan': '21:20'},
+ {'seq': 22, 'seonambu': '22:00', 'daedunsan': '22:00'}]
 
-HUB_SCHEDULES = [{'section': '마전 ➡ 금산읍', 'time': '07:35', 'bus_no': '810', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '07:35', 'bus_no': '740', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '08:20', 'bus_no': '420', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '07:00', 'bus_no': '920', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '07:15', 'bus_no': '810', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '06:30', 'bus_no': '730', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 초미동', 'time': '10:20', 'bus_no': '920', 'via_dest': '초미동,금산'},
- {'section': '마전 ➡ 장대리', 'time': '09:50', 'bus_no': '920', 'via_dest': '장대리'},
- {'section': '마전 ➡ 군북·천을리', 'time': '13:10', 'bus_no': '710', 'via_dest': '군북·천을리'},
- {'section': '군북 ➡ 마전', 'time': '07:05', 'bus_no': '740', 'via_dest': '마전'},
- {'section': '천을리 ➡ 마전', 'time': '13:50', 'bus_no': '710', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '08:20', 'bus_no': '760', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '08:35', 'bus_no': '760', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '08:30', 'bus_no': '920', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '07:40', 'bus_no': '920', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '08:00', 'bus_no': '760', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '07:25', 'bus_no': '720', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 초미동', 'time': '12:05', 'bus_no': '910', 'via_dest': '초미동,금산'},
- {'section': '마전 ➡ 장대리', 'time': '13:30', 'bus_no': '750', 'via_dest': '장대리'},
- {'section': '군북 ➡ 마전', 'time': '09:10', 'bus_no': '920', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '09:35', 'bus_no': '900', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '11:05', 'bus_no': '920', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '10:15', 'bus_no': '910', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '09:35', 'bus_no': '910', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '10:30', 'bus_no': '940', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '07:55', 'bus_no': '740', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 초미동', 'time': '17:15', 'bus_no': '910', 'via_dest': '초미동,금산'},
- {'section': '군북 ➡ 마전', 'time': '10:50', 'bus_no': '910', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '10:50', 'bus_no': '940', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '12:25', 'bus_no': '750', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '11:20', 'bus_no': '930', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '10:25', 'bus_no': '920', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '12:50', 'bus_no': '710', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '08:50', 'bus_no': '710', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 초미동', 'time': '20:00', 'bus_no': '910', 'via_dest': '초미동,금산'},
- {'section': '군북 ➡ 마전', 'time': '11:50', 'bus_no': '930', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '11:20', 'bus_no': '910', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '13:25', 'bus_no': '910', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '13:10', 'bus_no': '710', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '12:25', 'bus_no': '920', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '13:55', 'bus_no': '810', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '09:30', 'bus_no': '810', 'via_dest': '금산읍'},
- {'section': '군북 ➡ 마전', 'time': '15:10', 'bus_no': '930', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '12:20', 'bus_no': '930', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '14:10', 'bus_no': '750', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '14:35', 'bus_no': '930', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '14:20', 'bus_no': '810', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '14:35', 'bus_no': '750', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '09:50', 'bus_no': '760', 'via_dest': '금산읍'},
- {'section': '군북 ➡ 마전', 'time': '17:10', 'bus_no': '930', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '13:20', 'bus_no': '920', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '15:10', 'bus_no': '810', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '15:50', 'bus_no': '930', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '16:25', 'bus_no': '920', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '15:30', 'bus_no': '810', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '10:55', 'bus_no': '760', 'via_dest': '금산읍'},
- {'section': '군북 ➡ 마전', 'time': '18:25', 'bus_no': '930', 'via_dest': '마전'},
- {'section': '마전 ➡ 금산읍', 'time': '14:30', 'bus_no': '710', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '17:25', 'bus_no': '730', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '17:55', 'bus_no': '930', 'via_dest': '군북'},
- {'section': '마전 ➡ 서대산', 'time': '18:40', 'bus_no': '920', 'via_dest': '서대산'},
- {'section': '진산 ➡ 마전', 'time': '17:00', 'bus_no': '730', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '11:30', 'bus_no': '920', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '15:00', 'bus_no': '750', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 진산', 'time': '19:00', 'bus_no': '930', 'via_dest': '진산'},
- {'section': '마전 ➡ 군북', 'time': '19:25', 'bus_no': '920', 'via_dest': '군북'},
- {'section': '진산 ➡ 마전', 'time': '17:50', 'bus_no': '730', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '12:50', 'bus_no': '750', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '16:00', 'bus_no': '810', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 마전', 'time': '19:20', 'bus_no': '810', 'via_dest': '마전'},
- {'section': '진산 ➡ 금산읍', 'time': '13:20', 'bus_no': '730', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '17:05', 'bus_no': '920', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '13:50', 'bus_no': '910', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '17:40', 'bus_no': '930', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '14:50', 'bus_no': '720', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '18:10', 'bus_no': '730', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '15:05', 'bus_no': '730', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '19:40', 'bus_no': '810', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '15:55', 'bus_no': '810', 'via_dest': '금산읍'},
- {'section': '마전 ➡ 금산읍', 'time': '20:05', 'bus_no': '900', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '16:20', 'bus_no': '760', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '17:10', 'bus_no': '760', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '18:10', 'bus_no': '710', 'via_dest': '금산읍'},
- {'section': '진산 ➡ 금산읍', 'time': '20:00', 'bus_no': '760', 'via_dest': '금산읍'}]
+DAEJEON_34_STOPS_TO_DAEDUN = [{'name': '서남부터미널기점',
+  'id': '21660',
+  'zone': '대전 중구',
+  'hub': True,
+  'min': 0,
+  'lat': 36.314888,
+  'lng': 127.387314,
+  'nodeid': 'DJB8001956',
+  'seq': 1},
+ {'name': '버드내아파트',
+  'id': '21680',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 2,
+  'lat': 36.31583,
+  'lng': 127.38794,
+  'nodeid': 'DJB8001714',
+  'seq': 2},
+ {'name': '서부종합시장',
+  'id': '21690',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 3,
+  'lat': 36.31545,
+  'lng': 127.39004,
+  'nodeid': 'DJB8001953',
+  'seq': 3},
+ {'name': '대전서남부터미널',
+  'id': '22370',
+  'zone': '대전 중구',
+  'hub': True,
+  'min': 5,
+  'lat': 36.312706,
+  'lng': 127.389,
+  'nodeid': 'DJB8001955',
+  'seq': 4},
+ {'name': '머티네거리',
+  'id': '22320',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 6,
+  'lat': 36.309193,
+  'lng': 127.38768,
+  'nodeid': 'DJB8001484',
+  'seq': 5},
+ {'name': '산성동행정복지센터',
+  'id': '22300',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 8,
+  'lat': 36.30615,
+  'lng': 127.38652,
+  'nodeid': 'DJB8001851',
+  'seq': 6},
+ {'name': '산성네거리',
+  'id': '22280',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 9,
+  'lat': 36.303757,
+  'lng': 127.386055,
+  'nodeid': 'DJB8001847',
+  'seq': 7},
+ {'name': '산성초등학교',
+  'id': '22570',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 11,
+  'lat': 36.300503,
+  'lng': 127.3855,
+  'nodeid': 'DJB8001856',
+  'seq': 8},
+ {'name': '사정동',
+  'id': '22550',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 12,
+  'lat': 36.29794,
+  'lng': 127.38467,
+  'nodeid': 'DJB8001828',
+  'seq': 9},
+ {'name': '우남스타원아파트',
+  'id': '22500',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 14,
+  'lat': 36.29316,
+  'lng': 127.38268,
+  'nodeid': 'DJB8002329',
+  'seq': 10},
+ {'name': '농산물유통센터',
+  'id': '22460',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 15,
+  'lat': 36.28877,
+  'lng': 127.38014,
+  'nodeid': 'DJB8001281',
+  'seq': 11},
+ {'name': '안영생활체육단지',
+  'id': '22680',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 17,
+  'lat': 36.28519,
+  'lng': 127.376335,
+  'nodeid': 'DJB8002171',
+  'seq': 12},
+ {'name': '한빛고교',
+  'id': '22670',
+  'zone': '대전 중구',
+  'hub': True,
+  'min': 18,
+  'lat': 36.28324,
+  'lng': 127.37591,
+  'nodeid': 'DJB8002938',
+  'seq': 13},
+ {'name': '안영동검바위마을',
+  'id': '22700',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 20,
+  'lat': 36.27322,
+  'lng': 127.3772,
+  'nodeid': 'DJB8002173',
+  'seq': 14},
+ {'name': '샛고개',
+  'id': '23520',
+  'zone': '대전·금산 경계',
+  'hub': False,
+  'min': 21,
+  'lat': 36.271008,
+  'lng': 127.37876,
+  'nodeid': 'DJB8001917',
+  'seq': 15},
+ {'name': '한마음아파트',
+  'id': '74170',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 23,
+  'lat': 36.268833,
+  'lng': 127.376236,
+  'nodeid': 'DJB8005273',
+  'seq': 16},
+ {'name': '구만리',
+  'id': '74230',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 24,
+  'lat': 36.261517,
+  'lng': 127.37793,
+  'nodeid': 'DJB8005077',
+  'seq': 17},
+ {'name': '부대앞',
+  'id': '74110',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 26,
+  'lat': 36.260155,
+  'lng': 127.37487,
+  'nodeid': 'DJB8005153',
+  'seq': 18},
+ {'name': '지량리',
+  'id': '74070',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 27,
+  'lat': 36.25709,
+  'lng': 127.37362,
+  'nodeid': 'DJB8005257',
+  'seq': 19},
+ {'name': '둥구나무집',
+  'id': '74090',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 28,
+  'lat': 36.250427,
+  'lng': 127.37467,
+  'nodeid': 'DJB8005117',
+  'seq': 20},
+ {'name': '지량1리',
+  'id': '74010',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 29,
+  'lat': 36.247307,
+  'lng': 127.37038,
+  'nodeid': 'DJB8005255',
+  'seq': 21},
+ {'name': '압재',
+  'id': '74030',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 31,
+  'lat': 36.234253,
+  'lng': 127.37331,
+  'nodeid': 'DJB8005199',
+  'seq': 22},
+ {'name': '신대2리',
+  'id': '74130',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 32,
+  'lat': 36.22846,
+  'lng': 127.37557,
+  'nodeid': 'DJB8005181',
+  'seq': 23},
+ {'name': '신대3리',
+  'id': '74140',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 33,
+  'lat': 36.224586,
+  'lng': 127.37573,
+  'nodeid': 'DJB8005183',
+  'seq': 24},
+ {'name': '신대1리',
+  'id': '74190',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 35,
+  'lat': 36.21294,
+  'lng': 127.37694,
+  'nodeid': 'DJB8005180',
+  'seq': 25},
+ {'name': '신대초등학교',
+  'id': '74240',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 36,
+  'lat': 36.209026,
+  'lng': 127.37845,
+  'nodeid': 'DJB8005185',
+  'seq': 26},
+ {'name': '구례2리',
+  'id': '74300',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 37,
+  'lat': 36.203873,
+  'lng': 127.379395,
+  'nodeid': 'DJB8005073',
+  'seq': 27},
+ {'name': '구례1리',
+  'id': '74270',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 38,
+  'lat': 36.201187,
+  'lng': 127.37899,
+  'nodeid': 'DJB8005070',
+  'seq': 28},
+ {'name': '구례3리',
+  'id': '74320',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 39,
+  'lat': 36.197037,
+  'lng': 127.381905,
+  'nodeid': 'DJB8005075',
+  'seq': 29},
+ {'name': '운곡마을',
+  'id': '74340',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 40,
+  'lat': 36.191143,
+  'lng': 127.383385,
+  'nodeid': 'DJB8005223',
+  'seq': 30},
+ {'name': '백암리',
+  'id': '74210',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 41,
+  'lat': 36.184025,
+  'lng': 127.37814,
+  'nodeid': 'DJB8005139',
+  'seq': 31},
+ {'name': '수영2리',
+  'id': '74370',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 42,
+  'lat': 36.182007,
+  'lng': 127.385185,
+  'nodeid': 'DJB8005172',
+  'seq': 32},
+ {'name': '복수중학교',
+  'id': '74380',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 43,
+  'lat': 36.18037,
+  'lng': 127.389244,
+  'nodeid': 'DJB8005151',
+  'seq': 33},
+ {'name': '수영3리',
+  'id': '74400',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 44,
+  'lat': 36.176964,
+  'lng': 127.39152,
+  'nodeid': 'DJB8005174',
+  'seq': 34},
+ {'name': '수영1리',
+  'id': '74420',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 45,
+  'lat': 36.173527,
+  'lng': 127.39248,
+  'nodeid': 'DJB8005171',
+  'seq': 35},
+ {'name': '복수면사무소',
+  'id': '74440',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 46,
+  'lat': 36.166695,
+  'lng': 127.397865,
+  'nodeid': 'DJB8005149',
+  'seq': 36},
+ {'name': '곡남리종점',
+  'id': '74460',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 47,
+  'lat': 36.1628,
+  'lng': 127.397934,
+  'nodeid': 'DJB8005059',
+  'seq': 37},
+ {'name': '곡남삼거리',
+  'id': '74550',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 48,
+  'lat': 36.15947,
+  'lng': 127.39726,
+  'nodeid': 'DJB8005061',
+  'seq': 38},
+ {'name': '교촌리모랭이골',
+  'id': '74590',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 49,
+  'lat': 36.15497,
+  'lng': 127.390625,
+  'nodeid': 'DJB8005068',
+  'seq': 39},
+ {'name': '교촌1리',
+  'id': '74570',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 50,
+  'lat': 36.15142,
+  'lng': 127.38237,
+  'nodeid': 'DJB8005066',
+  'seq': 40},
+ {'name': '방축리',
+  'id': '74610',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 51,
+  'lat': 36.147373,
+  'lng': 127.375244,
+  'nodeid': 'DJB8005134',
+  'seq': 41},
+ {'name': '진산면사무소',
+  'id': '74630',
+  'zone': '금산 진산면',
+  'hub': True,
+  'min': 53,
+  'lat': 36.144054,
+  'lng': 127.37022,
+  'nodeid': 'DJB8005261',
+  'seq': 42},
+ {'name': '진산',
+  'id': '74650',
+  'zone': '금산 진산면',
+  'hub': True,
+  'min': 54,
+  'lat': 36.142113,
+  'lng': 127.36719,
+  'nodeid': 'DJB8005263',
+  'seq': 43},
+ {'name': '원묵산',
+  'id': '74680',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 56,
+  'lat': 36.13495,
+  'lng': 127.35739,
+  'nodeid': 'DJB8003058',
+  'seq': 44},
+ {'name': '대둔산눈썰매장',
+  'id': '74690',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 58,
+  'lat': 36.132042,
+  'lng': 127.35356,
+  'nodeid': 'DJB8003060',
+  'seq': 45},
+ {'name': '대둔산휴게소',
+  'id': '74700',
+  'zone': '금산 진산면',
+  'hub': True,
+  'min': 60,
+  'lat': 36.12581,
+  'lng': 127.34061,
+  'nodeid': 'DJB8003062',
+  'seq': 46}]
 
-PUB_OUTBOUND = [{'category': '공공형버스',
-  'direction': '서남부터미널(진산발)',
-  'origin': '서남부터미널',
-  'via_dest': '당디,행정,지방, 신대,지량,안영',
-  'time': '07:00',
-  'bus_no': '81'},
- {'category': '공공형버스',
-  'direction': '서남부터미널(진산발)',
-  'origin': '서남부터미널',
-  'via_dest': '당디,행정,지방, 신대,지량,안영',
-  'time': '10:25',
-  'bus_no': '81'},
- {'category': '공공형버스',
-  'direction': '서남부터미널(진산발)',
-  'origin': '서남부터미널',
-  'via_dest': '당디,행정,지방, 신대,지량,안영',
-  'time': '13:55',
-  'bus_no': '81'},
- {'category': '공공형버스',
-  'direction': '서남부터미널(진산발)',
-  'origin': '서남부터미널',
-  'via_dest': '당디,행정,지방, 신대,지량,안영',
-  'time': '16:40',
-  'bus_no': '81'},
- {'category': '공공형버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '금성면,원터',
-  'time': '06:30',
-  'bus_no': '73'},
- {'category': '공공형버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '읍내,파초,초미동',
-  'time': '07:00',
-  'bus_no': '77'},
- {'category': '공공형버스',
-  'direction': '진산방면',
-  'origin': '금산읍',
-  'via_dest': '읍내,파초,초미동',
-  'time': '17:50',
-  'bus_no': '77'},
- {'category': '공공형버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '읍내,석동, 자연휴양림',
-  'time': '09:20',
-  'bus_no': '68'},
- {'category': '공공형버스',
-  'direction': '남이방면',
-  'origin': '금산읍',
-  'via_dest': '읍내,석동, 자연휴양림',
-  'time': '14:40',
-  'bus_no': '68'},
- {'category': '공공형버스',
-  'direction': '오룡방면',
-  'origin': '금산읍',
-  'via_dest': '읍내, 상지말,알미',
-  'time': '12:40',
-  'bus_no': '15'},
- {'category': '공공형버스',
-  'direction': '복수면사무소(금산발)',
-  'origin': '금산읍',
-  'via_dest': '우체국,상지말,알미,못안,둑실,만악,용지,목소리,중두문',
-  'time': '06:30',
-  'bus_no': '800'},
- {'category': '공공형버스',
-  'direction': '복수면사무소(금산발)',
-  'origin': '금산읍',
-  'via_dest': '우체국,상지말,알미,못안,둑실,만악,용지,목소리,중두문',
-  'time': '18:30',
-  'bus_no': '800'},
- {'category': '공공형버스',
-  'direction': '진산방면(복수면사무소발)',
-  'origin': '복수면사무소',
-  'via_dest': '곡남,수영,복수중,백암,구례,신대',
-  'time': '07:40',
-  'bus_no': '71'},
- {'category': '공공형버스',
-  'direction': '진산방면(금산발)',
-  'origin': '금산읍',
-  'via_dest': '우체국,양전,원터,만악,부암',
-  'time': '10:20',
-  'bus_no': '72'},
- {'category': '공공형버스',
-  'direction': '진산방면(금산발)',
-  'origin': '금산읍',
-  'via_dest': '우체국,양전,원터,만악,부암',
-  'time': '13:10',
-  'bus_no': '72'},
- {'category': '공공형버스',
-  'direction': '진산방면(금산발)',
-  'origin': '금산읍',
-  'via_dest': '곡남,수영,복수중,백암,구례,신대',
-  'time': '14:20',
-  'bus_no': '70'},
- {'category': '공공형버스',
-  'direction': '진산방면(금산발)',
-  'origin': '금산읍',
-  'via_dest': '곡남,수영,복수중,백암,구례,신대',
-  'time': '15:30',
-  'bus_no': '70'},
- {'category': '공공형버스',
-  'direction': '진산방면(금산발)',
-  'origin': '금산읍',
-  'via_dest': '곡남,수영,복수중,백암,구례,신대',
-  'time': '16:40',
-  'bus_no': '70'}]
+DAEJEON_34_STOPS_TO_DAEJEON = [{'name': '대둔산휴게소',
+  'id': '74700',
+  'zone': '금산 진산면',
+  'hub': True,
+  'min': 0,
+  'lat': 36.12581,
+  'lng': 127.34061,
+  'nodeid': 'DJB8003062',
+  'seq': 46},
+ {'name': '대둔산눈썰매장',
+  'id': '3061',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 2,
+  'lat': 36.13191,
+  'lng': 127.353516,
+  'nodeid': 'DJB8003061',
+  'seq': 47},
+ {'name': '원묵산',
+  'id': '3059',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 4,
+  'lat': 36.1348,
+  'lng': 127.35742,
+  'nodeid': 'DJB8003059',
+  'seq': 49},
+ {'name': '진산',
+  'id': '74650',
+  'zone': '금산 진산면',
+  'hub': True,
+  'min': 6,
+  'lat': 36.14204,
+  'lng': 127.3673,
+  'nodeid': 'DJB8003063',
+  'seq': 50},
+ {'name': '진산면사무소',
+  'id': '74640',
+  'zone': '금산 진산면',
+  'hub': True,
+  'min': 7,
+  'lat': 36.143883,
+  'lng': 127.37033,
+  'nodeid': 'DJB8005262',
+  'seq': 51},
+ {'name': '방축리',
+  'id': '74620',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 9,
+  'lat': 36.147217,
+  'lng': 127.37536,
+  'nodeid': 'DJB8005135',
+  'seq': 52},
+ {'name': '교촌1리',
+  'id': '74580',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 10,
+  'lat': 36.15131,
+  'lng': 127.382454,
+  'nodeid': 'DJB8005067',
+  'seq': 53},
+ {'name': '교촌리모랭이골',
+  'id': '74600',
+  'zone': '금산 진산면',
+  'hub': False,
+  'min': 11,
+  'lat': 36.15485,
+  'lng': 127.39067,
+  'nodeid': 'DJB8005069',
+  'seq': 54},
+ {'name': '곡남삼거리',
+  'id': '74560',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 12,
+  'lat': 36.159298,
+  'lng': 127.39735,
+  'nodeid': 'DJB8005062',
+  'seq': 55},
+ {'name': '곡남리종점',
+  'id': '74470',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 13,
+  'lat': 36.163036,
+  'lng': 127.39828,
+  'nodeid': 'DJB8005060',
+  'seq': 56},
+ {'name': '복수면사무소',
+  'id': '74450',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 14,
+  'lat': 36.166523,
+  'lng': 127.39805,
+  'nodeid': 'DJB8005148',
+  'seq': 57},
+ {'name': '수영1리',
+  'id': '74430',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 15,
+  'lat': 36.173374,
+  'lng': 127.39275,
+  'nodeid': 'DJB8005170',
+  'seq': 58},
+ {'name': '수영3리',
+  'id': '74410',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 16,
+  'lat': 36.176952,
+  'lng': 127.39173,
+  'nodeid': 'DJB8005175',
+  'seq': 59},
+ {'name': '복수중학교',
+  'id': '74390',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 17,
+  'lat': 36.180428,
+  'lng': 127.389336,
+  'nodeid': 'DJB8005150',
+  'seq': 60},
+ {'name': '수영2리',
+  'id': '74360',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 18,
+  'lat': 36.182182,
+  'lng': 127.38498,
+  'nodeid': 'DJB8005173',
+  'seq': 61},
+ {'name': '백암리',
+  'id': '74220',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 19,
+  'lat': 36.184143,
+  'lng': 127.37839,
+  'nodeid': 'DJB8005140',
+  'seq': 62},
+ {'name': '운곡마을',
+  'id': '74350',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 20,
+  'lat': 36.191124,
+  'lng': 127.383575,
+  'nodeid': 'DJB8005222',
+  'seq': 63},
+ {'name': '구례3리',
+  'id': '74330',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 21,
+  'lat': 36.19633,
+  'lng': 127.38252,
+  'nodeid': 'DJB8005074',
+  'seq': 64},
+ {'name': '구례1리',
+  'id': '74280',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 22,
+  'lat': 36.201374,
+  'lng': 127.379135,
+  'nodeid': 'DJB8005071',
+  'seq': 65},
+ {'name': '구례2리',
+  'id': '74310',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 23,
+  'lat': 36.203876,
+  'lng': 127.37959,
+  'nodeid': 'DJB8005072',
+  'seq': 66},
+ {'name': '신대초등학교',
+  'id': '74260',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 24,
+  'lat': 36.208855,
+  'lng': 127.37866,
+  'nodeid': 'DJB8005186',
+  'seq': 67},
+ {'name': '신대1리',
+  'id': '74200',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 25,
+  'lat': 36.212894,
+  'lng': 127.37715,
+  'nodeid': 'DJB8005179',
+  'seq': 68},
+ {'name': '신대3리',
+  'id': '74160',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 27,
+  'lat': 36.224792,
+  'lng': 127.37589,
+  'nodeid': 'DJB8005184',
+  'seq': 69},
+ {'name': '신대2리',
+  'id': '74150',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 28,
+  'lat': 36.228436,
+  'lng': 127.37576,
+  'nodeid': 'DJB8005182',
+  'seq': 70},
+ {'name': '신대',
+  'id': '74060',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 29,
+  'lat': 36.234447,
+  'lng': 127.37331,
+  'nodeid': 'DJB8005178',
+  'seq': 71},
+ {'name': '압재',
+  'id': '74040',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 30,
+  'lat': 36.240929,
+  'lng': 127.371925,
+  'nodeid': '',
+  'seq': 0},
+ {'name': '지량1리',
+  'id': '74020',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 31,
+  'lat': 36.24741,
+  'lng': 127.37054,
+  'nodeid': 'DJB8005256',
+  'seq': 72},
+ {'name': '둥구나무집',
+  'id': '74100',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 32,
+  'lat': 36.25036,
+  'lng': 127.374886,
+  'nodeid': 'DJB8005118',
+  'seq': 73},
+ {'name': '지량리',
+  'id': '74080',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 33,
+  'lat': 36.257046,
+  'lng': 127.37407,
+  'nodeid': 'DJB8005258',
+  'seq': 74},
+ {'name': '부대앞',
+  'id': '74120',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 34,
+  'lat': 36.260212,
+  'lng': 127.375114,
+  'nodeid': 'DJB8005152',
+  'seq': 75},
+ {'name': '구만리',
+  'id': '74250',
+  'zone': '금산 복수면',
+  'hub': True,
+  'min': 36,
+  'lat': 36.261295,
+  'lng': 127.37803,
+  'nodeid': 'DJB8005076',
+  'seq': 76},
+ {'name': '한마음아파트',
+  'id': '74180',
+  'zone': '금산 복수면',
+  'hub': False,
+  'min': 37,
+  'lat': 36.26875,
+  'lng': 127.376396,
+  'nodeid': 'DJB8005274',
+  'seq': 77},
+ {'name': '샛고개',
+  'id': '22730',
+  'zone': '대전·금산 경계',
+  'hub': False,
+  'min': 39,
+  'lat': 36.27125,
+  'lng': 127.37905,
+  'nodeid': 'DJB8001918',
+  'seq': 78},
+ {'name': '안영동검바위마을',
+  'id': '22710',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 40,
+  'lat': 36.273804,
+  'lng': 127.37731,
+  'nodeid': 'DJB8002174',
+  'seq': 79},
+ {'name': '한빛고교',
+  'id': '22660',
+  'zone': '대전 중구',
+  'hub': True,
+  'min': 42,
+  'lat': 36.28315,
+  'lng': 127.37609,
+  'nodeid': 'DJB8002937',
+  'seq': 80},
+ {'name': '안영생활체육단지',
+  'id': '22690',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 43,
+  'lat': 36.285152,
+  'lng': 127.37655,
+  'nodeid': 'DJB8002172',
+  'seq': 81},
+ {'name': '농산물유통센터',
+  'id': '22470',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 45,
+  'lat': 36.28847,
+  'lng': 127.380196,
+  'nodeid': 'DJB8001280',
+  'seq': 82},
+ {'name': '우남스타원아파트',
+  'id': '22520',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 46,
+  'lat': 36.293278,
+  'lng': 127.383125,
+  'nodeid': 'DJB8002328',
+  'seq': 83},
+ {'name': '사정동',
+  'id': '22560',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 48,
+  'lat': 36.297787,
+  'lng': 127.38488,
+  'nodeid': 'DJB8001827',
+  'seq': 84},
+ {'name': '산성초등학교',
+  'id': '22580',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 49,
+  'lat': 36.300632,
+  'lng': 127.385826,
+  'nodeid': 'DJB8001857',
+  'seq': 85},
+ {'name': '산성네거리',
+  'id': '22290',
+  'zone': '대전 중구',
+  'hub': False,
+  'min': 51,
+  'lat': 36.30329,
+  'lng': 127.386314,
+  'nodeid': 'DJB8001846',
+  'seq': 86},
+ {'name': '산성시장',
+  'id': '22310',
+  'zone': '대전 중구',
+  'hub': True,
+  'min': 53,
+  'lat': 36.306076,
+  'lng': 127.38686,
+  'nodeid': 'DJB8001852',
+  'seq': 87},
+ {'name': '서남부터미널종점',
+  'id': '21670',
+  'zone': '대전 중구',
+  'hub': True,
+  'min': 57,
+  'lat': 36.31194,
+  'lng': 127.38778,
+  'nodeid': 'DJB8003105',
+  'seq': 88}]
 
-PUB_INBOUND = [{'category': '공공형(종점발)',
-  'direction': '서남부터미널➡진산',
-  'time': '08:45',
-  'via_dest': '서남부터미널 발, 안영,지량,신대,지방,행정,묵산'},
- {'category': '공공형(종점발)',
-  'direction': '서남부터미널➡진산',
-  'time': '12:30',
-  'via_dest': '서남부터미널 발, 안영,지량,신대,지방,행정,묵산'},
- {'category': '공공형(종점발)',
-  'direction': '서남부터미널➡진산',
-  'time': '15:20',
-  'via_dest': '서남부터미널 발, 안영,지량,신대,지방,행정,묵산'},
- {'category': '공공형(종점발)',
-  'direction': '서남부터미널➡진산',
-  'time': '18:40',
-  'via_dest': '서남부터미널 발, 안영,지량,신대,지방,행정,묵산'},
- {'category': '공공형(종점발)', 'direction': '진산방면➡금산', 'time': '08:05', 'via_dest': '진산 발 초미동,파초,읍내경유'},
- {'category': '공공형(종점발)', 'direction': '진산방면➡금산', 'time': '18:45', 'via_dest': '진산 발 초미동,파초,읍내경유'},
- {'category': '공공형(종점발)', 'direction': '진산방면➡금산', 'time': '19:50', 'via_dest': '진산 발 원터,금성면'},
- {'category': '공공형(종점발)', 'direction': '남이방면➡금산', 'time': '10:50', 'via_dest': '남이자연휴양림 발 건천,석동,읍내경유'},
- {'category': '공공형(종점발)', 'direction': '남이방면➡금산', 'time': '16:10', 'via_dest': '남이자연휴양림 발 건천,석동,읍내경유'},
- {'category': '공공형(종점발)', 'direction': '오룡방면➡금산', 'time': '13:35', 'via_dest': '오룡 발 알미,상지말,읍내경유'},
- {'category': '공공형(종점발)',
-  'direction': '복수면사무소➡금산읍',
-  'time': '08:50',
-  'via_dest': '중두문,목소리,용지,만악,둑실,못안,알미,상지말,우체국'},
- {'category': '공공형(종점발)',
-  'direction': '복수면사무소➡금산읍',
-  'time': '19:20',
-  'via_dest': '서남부터미널 발, 안영,지량,신대,지방,행정,묵산'},
- {'category': '공공형(종점발)', 'direction': '진산➡복수면사무소', 'time': '08:25', 'via_dest': '읍내,곡남'},
- {'category': '공공형(종점발)', 'direction': '진산➡금산읍', 'time': '11:10', 'via_dest': '부암,만악,원터,양전,우체국'},
- {'category': '공공형(종점발)', 'direction': '진산➡금산읍', 'time': '17:30', 'via_dest': '부암,만악,원터,양전,우체국'},
- {'category': '공공형(종점발)', 'direction': '복수(신대)➡진산면', 'time': '14:50', 'via_dest': '신대,구례,백암,복수중,수영,곡남'},
- {'category': '공공형(종점발)', 'direction': '복수(신대)➡진산면', 'time': '16:00', 'via_dest': '신대,구례,백암,복수중,수영,곡남'},
- {'category': '공공형(종점발)', 'direction': '복수(신대)➡진산면', 'time': '17:00', 'via_dest': '신대,구례,백암,복수중,수영,곡남'}]
+# =============================================================================
+# 2. 공공데이터포털 (TAGO) API 연동 및 지도 좌표 매핑
+# =============================================================================
 
-DAEJEON_34_META = {
-    "bus_no": "34",
-    "title": "대전광역시 외곽버스 34번",
-    "operator": "대전버스 (인가대수 4대)",
-    "interval": "40~55분 간격 (일 22회 운행)",
-    "first_last": "첫차 06:00 · 막차 22:00 (양방향 동일)",
-    "basis_date": "2026년 2월 26일 기준",
-    "start_desc": "[출발] 대전 중구 유천동(서남부터미널기점) / [도착] 산성동(서남부터미널종점)",
-    "end_desc": "충남 금산군 진산면 묵산리 (대둔산휴게소 · 배티재)",
+DEFAULT_TAGO_KEY = "47fe05b63b9b391b33cae46f94a40f0e5aa8edc4f8937c7ef7a12d65f267c389"
+
+
+def get_api_key() -> str:
+    """st.secrets -> 환경변수 -> 기본 키 순서로 API 키 로드"""
+    try:
+        if "TAGO_API_KEY" in st.secrets:
+            return str(st.secrets["TAGO_API_KEY"]).strip()
+    except Exception:
+        pass
+    return os.environ.get("TAGO_API_KEY", DEFAULT_TAGO_KEY).strip()
+
+
+# 금산군(cityCode=34310) 노선번호 -> TAGO routeId 목록 매핑 (지선/변형 노선 포함)
+GEUMSAN_TAGO_ROUTES: dict[str, list[str]] = {
+    "15": ["CNB292000006"],
+    "68": ["CNB292000097"],
+    "73": ["CNB292000104", "CNB292000105"],
+    "77": ["CNB292000118"],
+    "81": ["CNB292000122"],
+    "100": ["CNB292000001", "CNB292000002"],
+    "102": ["CNB292000003"],
+    "110": ["CNB292000004"],
+    "120": ["CNB292000005"],
+    "150": ["CNB292000007"],
+    "160": ["CNB292000008", "CNB292000009", "CNB292000010", "CNB292000011"],
+    "170": ["CNB292000012", "CNB292000013", "CNB292000014"],
+    "200": ["CNB292000015", "CNB292000016", "CNB292000017"],
+    "210": ["CNB292000018", "CNB292000019", "CNB292000020"],
+    "220": ["CNB292000021", "CNB292000022", "CNB292000023", "CNB292000024"],
+    "230": ["CNB292000025", "CNB292000026", "CNB292000027"],
+    "240": ["CNB292000028"],
+    "250": ["CNB292000029"],
+    "300": ["CNB292000030"],
+    "310": ["CNB292000031", "CNB292000032"],
+    "320": ["CNB292000033", "CNB292000034", "CNB292000035", "CNB292000036", "CNB292000037"],
+    "330": ["CNB292000038", "CNB292000039", "CNB292000040", "CNB292000041", "CNB292000042", "CNB292000043", "CNB292000044"],
+    "340": ["CNB292000045"],
+    "350": ["CNB292000046", "CNB292000047", "CNB292000048"],
+    "360": ["CNB292000049", "CNB292000050"],
+    "400": ["CNB292000051", "CNB292000052"],
+    "410": ["CNB292000053", "CNB292000054"],
+    "420": ["CNB292000055", "CNB292000056", "CNB292000057"],
+    "430": ["CNB292000058", "CNB292000059"],
+    "440": ["CNB292000060", "CNB292000061", "CNB292000062", "CNB292000063", "CNB292000064"],
+    "500": ["CNB292000065", "CNB292000066"],
+    "510": ["CNB292000067", "CNB292000068"],
+    "520": ["CNB292000069", "CNB292000070", "CNB292000072"],
+    "522": ["CNB292000071"],
+    "530": ["CNB292000073", "CNB292000074", "CNB292000075"],
+    "540": ["CNB292000076", "CNB292000077", "CNB292000078"],
+    "550": ["CNB292000079", "CNB292000080"],
+    "560": ["CNB292000081", "CNB292000082"],
+    "600": ["CNB292000083"],
+    "610": ["CNB292000084", "CNB292000085"],
+    "620": ["CNB292000086"],
+    "630": ["CNB292000087", "CNB292000088", "CNB292000089"],
+    "640": ["CNB292000090", "CNB292000091"],
+    "650": ["CNB292000092", "CNB292000093", "CNB292000094", "CNB292000095"],
+    "670": ["CNB292000096"],
+    "700": ["CNB292000098"],
+    "710": ["CNB292000099", "CNB292000100", "CNB292000101"],
+    "720": ["CNB292000102"],
+    "721": ["CNB292000103"],
+    "730": ["CNB292000106", "CNB292000107", "CNB292000108"],
+    "740": ["CNB292000109"],
+    "750": ["CNB292000110", "CNB292000111"],
+    "760": ["CNB292000112", "CNB292000113", "CNB292000114", "CNB292000115", "CNB292000116", "CNB292000117"],
+    "800": ["CNB292000119", "CNB292000120", "CNB292000121"],
+    "810": ["CNB292000123", "CNB292000124", "CNB292000125", "CNB292000126", "CNB292000127"],
+    "900": ["CNB292000128", "CNB292000129"],
+    "910": ["CNB292000130", "CNB292000131", "CNB292000132"],
+    "920": ["CNB292000133", "CNB292000134", "CNB292000135", "CNB292000136"],
+    "930": ["CNB292000137", "CNB292000138", "CNB292000139"],
+    "940": ["CNB292000140"],
 }
 
-# 첨부 4.2 시간표 (총 22회: 서남부터미널 출발 / 대둔산휴게소 출발)
-DAEJEON_34_TIMETABLE = [
-    {"seq": 1,  "seonambu": "06:00", "daedunsan": "06:00"},
-    {"seq": 2,  "seonambu": "06:45", "daedunsan": "06:35"},
-    {"seq": 3,  "seonambu": "07:30", "daedunsan": "07:15"},
-    {"seq": 4,  "seonambu": "08:10", "daedunsan": "07:50"},
-    {"seq": 5,  "seonambu": "09:00", "daedunsan": "08:40"},
-    {"seq": 6,  "seonambu": "09:45", "daedunsan": "09:20"},
-    {"seq": 7,  "seonambu": "10:40", "daedunsan": "10:05"},
-    {"seq": 8,  "seonambu": "11:20", "daedunsan": "10:50"},
-    {"seq": 9,  "seonambu": "12:10", "daedunsan": "11:45"},
-    {"seq": 10, "seonambu": "12:55", "daedunsan": "12:30"},
-    {"seq": 11, "seonambu": "13:40", "daedunsan": "13:20"},
-    {"seq": 12, "seonambu": "14:30", "daedunsan": "14:10"},
-    {"seq": 13, "seonambu": "15:15", "daedunsan": "14:55"},
-    {"seq": 14, "seonambu": "16:00", "daedunsan": "15:45"},
-    {"seq": 15, "seonambu": "16:55", "daedunsan": "16:35"},
-    {"seq": 16, "seonambu": "17:45", "daedunsan": "17:20"},
-    {"seq": 17, "seonambu": "18:35", "daedunsan": "18:10"},
-    {"seq": 18, "seonambu": "19:20", "daedunsan": "19:05"},
-    {"seq": 19, "seonambu": "20:00", "daedunsan": "19:50"},
-    {"seq": 20, "seonambu": "20:40", "daedunsan": "20:35"},
-    {"seq": 21, "seonambu": "21:20", "daedunsan": "21:20"},
-    {"seq": 22, "seonambu": "22:00", "daedunsan": "22:00"},
-]
+# 금산 주요 거점 실제 GPS 좌표 및 대표 TAGO 정류장 ID
+GEUMSAN_HUB_GPS: dict[str, tuple[float, float, str]] = {
+    "금산읍": (36.110615, 127.491010, "CNB292000033"),
+    "제원": (36.122500, 127.540200, ""),
+    "군북": (36.165000, 127.512000, ""),
+    "마전": (36.202800, 127.465500, ""),
+    "복수": (36.180600, 127.416800, "DJB8003000"),
+    "진산": (36.142113, 127.367190, "DJB8005263"),
+    "금성": (36.142000, 127.462000, ""),
+    "하금": (36.068000, 127.388000, ""),
+    "남일(초현)": (36.058000, 127.462000, ""),
+    "부리": (36.042000, 127.535000, ""),
+    "신대(복수)": (36.214500, 127.394800, ""),
+    "백암": (36.197200, 127.405500, ""),
+    "서남부터미널(대전)": (36.312706, 127.389000, "DJB8001955"),
+}
 
-# 첨부 정류장 표 전체 반영 (서남부터미널기점 ➔ 대둔산휴게소 / 대둔산휴게소 ➔ 서남부터미널종점)
-# offset_min: 기점 출발 후 평균 통과 소요분(약 52분 코스), zone: 구역 표시
-DAEJEON_34_STOPS_TO_DAEDUN = [
-    {"name": "서남부터미널기점", "id": "21660", "zone": "대전 중구", "hub": True,  "min": 0},
-    {"name": "버드내아파트",     "id": "21680", "zone": "대전 중구", "hub": False, "min": 2},
-    {"name": "서부종합시장",     "id": "21690", "zone": "대전 중구", "hub": False, "min": 3},
-    {"name": "대전서남부터미널", "id": "22370", "zone": "대전 중구", "hub": True,  "min": 5},
-    {"name": "머티네거리",       "id": "22320", "zone": "대전 중구", "hub": False, "min": 6},
-    {"name": "산성동행정복지센터", "id": "22300", "zone": "대전 중구", "hub": False, "min": 8},
-    {"name": "산성네거리",       "id": "22280", "zone": "대전 중구", "hub": False, "min": 9},
-    {"name": "산성초등학교",     "id": "22570", "zone": "대전 중구", "hub": False, "min": 11},
-    {"name": "사정동",           "id": "22550", "zone": "대전 중구", "hub": False, "min": 12},
-    {"name": "우남스타원아파트", "id": "22500", "zone": "대전 중구", "hub": False, "min": 14},
-    {"name": "농산물유통센터",   "id": "22460", "zone": "대전 중구", "hub": False, "min": 15},
-    {"name": "안영생활체육단지", "id": "22680", "zone": "대전 중구", "hub": False, "min": 17},
-    {"name": "한빛고교",         "id": "22670", "zone": "대전 중구", "hub": True,  "min": 18},
-    {"name": "안영동검바위마을", "id": "22700", "zone": "대전 중구", "hub": False, "min": 20},
-    {"name": "샛고개",           "id": "23520", "zone": "대전·금산 경계", "hub": False, "min": 21},
-    {"name": "한마음아파트",     "id": "74170", "zone": "금산 복수면", "hub": False, "min": 23},
-    {"name": "구만리",           "id": "74230", "zone": "금산 복수면", "hub": True,  "min": 24},
-    {"name": "부대앞",           "id": "74110", "zone": "금산 복수면", "hub": False, "min": 26},
-    {"name": "지량리",           "id": "74070", "zone": "금산 복수면", "hub": False, "min": 27},
-    {"name": "둥구나무집",       "id": "74090", "zone": "금산 복수면", "hub": False, "min": 28},
-    {"name": "지량1리",          "id": "74010", "zone": "금산 복수면", "hub": False, "min": 29},
-    {"name": "압재",             "id": "74030", "zone": "금산 복수면", "hub": False, "min": 31},
-    {"name": "신대2리",          "id": "74130", "zone": "금산 복수면", "hub": False, "min": 32},
-    {"name": "신대3리",          "id": "74140", "zone": "금산 복수면", "hub": False, "min": 33},
-    {"name": "신대1리",          "id": "74190", "zone": "금산 복수면", "hub": False, "min": 35},
-    {"name": "신대초등학교",     "id": "74240", "zone": "금산 복수면", "hub": True,  "min": 36},
-    {"name": "구례2리",          "id": "74300", "zone": "금산 복수면", "hub": False, "min": 37},
-    {"name": "구례1리",          "id": "74270", "zone": "금산 복수면", "hub": False, "min": 38},
-    {"name": "구례3리",          "id": "74320", "zone": "금산 복수면", "hub": False, "min": 39},
-    {"name": "운곡마을",         "id": "74340", "zone": "금산 복수면", "hub": False, "min": 40},
-    {"name": "백암리",           "id": "74210", "zone": "금산 복수면", "hub": False, "min": 41},
-    {"name": "수영2리",          "id": "74370", "zone": "금산 복수면", "hub": False, "min": 42},
-    {"name": "복수중학교",       "id": "74380", "zone": "금산 복수면", "hub": True,  "min": 43},
-    {"name": "수영3리",          "id": "74400", "zone": "금산 복수면", "hub": False, "min": 44},
-    {"name": "수영1리",          "id": "74420", "zone": "금산 복수면", "hub": False, "min": 45},
-    {"name": "복수면사무소",     "id": "74440", "zone": "금산 복수면", "hub": True,  "min": 46},
-    {"name": "곡남리종점",       "id": "74460", "zone": "금산 복수면", "hub": False, "min": 47},
-    {"name": "곡남삼거리",       "id": "74550", "zone": "금산 복수면", "hub": False, "min": 48},
-    {"name": "교촌리모랭이골",   "id": "74590", "zone": "금산 진산면", "hub": False, "min": 49},
-    {"name": "교촌1리",          "id": "74570", "zone": "금산 진산면", "hub": False, "min": 50},
-    {"name": "방축리",           "id": "74610", "zone": "금산 진산면", "hub": False, "min": 51},
-    {"name": "진산면사무소",     "id": "74630", "zone": "금산 진산면", "hub": True,  "min": 53},
-    {"name": "진산",             "id": "74650", "zone": "금산 진산면", "hub": True,  "min": 54},
-    {"name": "원묵산",           "id": "74680", "zone": "금산 진산면", "hub": False, "min": 56},
-    {"name": "대둔산눈썰매장",   "id": "74690", "zone": "금산 진산면", "hub": False, "min": 58},
-    {"name": "대둔산휴게소",     "id": "74700", "zone": "금산 진산면", "hub": True,  "min": 60},
-]
 
-DAEJEON_34_STOPS_TO_DAEJEON = [
-    {"name": "대둔산휴게소",     "id": "74700", "zone": "금산 진산면", "hub": True,  "min": 0},
-    {"name": "대둔산눈썰매장",   "id": "3061",  "zone": "금산 진산면", "hub": False, "min": 2},
-    {"name": "원묵산",           "id": "3059",  "zone": "금산 진산면", "hub": False, "min": 4},
-    {"name": "진산",             "id": "74650", "zone": "금산 진산면", "hub": True,  "min": 6},
-    {"name": "진산면사무소",     "id": "74640", "zone": "금산 진산면", "hub": True,  "min": 7},
-    {"name": "방축리",           "id": "74620", "zone": "금산 진산면", "hub": False, "min": 9},
-    {"name": "교촌1리",          "id": "74580", "zone": "금산 진산면", "hub": False, "min": 10},
-    {"name": "교촌리모랭이골",   "id": "74600", "zone": "금산 진산면", "hub": False, "min": 11},
-    {"name": "곡남삼거리",       "id": "74560", "zone": "금산 복수면", "hub": False, "min": 12},
-    {"name": "곡남리종점",       "id": "74470", "zone": "금산 복수면", "hub": False, "min": 13},
-    {"name": "복수면사무소",     "id": "74450", "zone": "금산 복수면", "hub": True,  "min": 14},
-    {"name": "수영1리",          "id": "74430", "zone": "금산 복수면", "hub": False, "min": 15},
-    {"name": "수영3리",          "id": "74410", "zone": "금산 복수면", "hub": False, "min": 16},
-    {"name": "복수중학교",       "id": "74390", "zone": "금산 복수면", "hub": True,  "min": 17},
-    {"name": "수영2리",          "id": "74360", "zone": "금산 복수면", "hub": False, "min": 18},
-    {"name": "백암리",           "id": "74220", "zone": "금산 복수면", "hub": False, "min": 19},
-    {"name": "운곡마을",         "id": "74350", "zone": "금산 복수면", "hub": False, "min": 20},
-    {"name": "구례3리",          "id": "74330", "zone": "금산 복수면", "hub": False, "min": 21},
-    {"name": "구례1리",          "id": "74280", "zone": "금산 복수면", "hub": False, "min": 22},
-    {"name": "구례2리",          "id": "74310", "zone": "금산 복수면", "hub": False, "min": 23},
-    {"name": "신대초등학교",     "id": "74260", "zone": "금산 복수면", "hub": True,  "min": 24},
-    {"name": "신대1리",          "id": "74200", "zone": "금산 복수면", "hub": False, "min": 25},
-    {"name": "신대3리",          "id": "74160", "zone": "금산 복수면", "hub": False, "min": 27},
-    {"name": "신대2리",          "id": "74150", "zone": "금산 복수면", "hub": False, "min": 28},
-    {"name": "신대",             "id": "74060", "zone": "금산 복수면", "hub": False, "min": 29},
-    {"name": "압재",             "id": "74040", "zone": "금산 복수면", "hub": False, "min": 30},
-    {"name": "지량1리",          "id": "74020", "zone": "금산 복수면", "hub": False, "min": 31},
-    {"name": "둥구나무집",       "id": "74100", "zone": "금산 복수면", "hub": False, "min": 32},
-    {"name": "지량리",           "id": "74080", "zone": "금산 복수면", "hub": False, "min": 33},
-    {"name": "부대앞",           "id": "74120", "zone": "금산 복수면", "hub": False, "min": 34},
-    {"name": "구만리",           "id": "74250", "zone": "금산 복수면", "hub": True,  "min": 36},
-    {"name": "한마음아파트",     "id": "74180", "zone": "금산 복수면", "hub": False, "min": 37},
-    {"name": "샛고개",           "id": "22730", "zone": "대전·금산 경계", "hub": False, "min": 39},
-    {"name": "안영동검바위마을", "id": "22710", "zone": "대전 중구", "hub": False, "min": 40},
-    {"name": "한빛고교",         "id": "22660", "zone": "대전 중구", "hub": True,  "min": 42},
-    {"name": "안영생활체육단지", "id": "22690", "zone": "대전 중구", "hub": False, "min": 43},
-    {"name": "농산물유통센터",   "id": "22470", "zone": "대전 중구", "hub": False, "min": 45},
-    {"name": "우남스타원아파트", "id": "22520", "zone": "대전 중구", "hub": False, "min": 46},
-    {"name": "사정동",           "id": "22560", "zone": "대전 중구", "hub": False, "min": 48},
-    {"name": "산성초등학교",     "id": "22580", "zone": "대전 중구", "hub": False, "min": 49},
-    {"name": "산성네거리",       "id": "22290", "zone": "대전 중구", "hub": False, "min": 51},
-    {"name": "산성시장",         "id": "22310", "zone": "대전 중구", "hub": True,  "min": 53},
-    {"name": "서남부터미널종점", "id": "21670", "zone": "대전 중구", "hub": True,  "min": 57},
-]
+def geumsan_stop_latlon(stop_name: str) -> tuple[float, float]:
+    """금산 정류장 위·경도 반환 (주요 거점 실측 GPS + 마을 정류장 지리 좌표 변환)"""
+    if stop_name in GEUMSAN_HUB_GPS:
+        lat, lng, _ = GEUMSAN_HUB_GPS[stop_name]
+        return lat, lng
+    nd = NODES.get(stop_name)
+    if not nd:
+        return 36.110615, 127.491010
+    # NODES의 도식 좌표계(동쪽 x↑, 남북/서북 보정)를 금산군 위경도 범위로 매핑
+    lat = 36.032 + (nd["y"] / 66.0) * 0.195
+    lng = 127.345 + (nd["x"] / 92.0) * 0.235
+    return round(lat, 6), round(lng, 6)
+
+
+def _extract_tago_items(body_obj: dict) -> list[dict]:
+    items = body_obj.get("items")
+    if not items or isinstance(items, str):
+        return []
+    raw = items.get("item", [])
+    if isinstance(raw, dict):
+        return [raw]
+    return raw if isinstance(raw, list) else []
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_live_bus_locations(city_code: int, route_ids: tuple[str, ...]) -> tuple[list[dict], str]:
+    """
+    국토교통부(TAGO) 버스위치정보 (BusLcInfoInqireService)
+    - 병렬 조회로 응답 지연 최소화 · 실시간 GPS 좌표, 차량번호, 최근 정류장 반환
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    key = get_api_key()
+    if not key or not route_ids:
+        return [], "no_key"
+
+    encoded_key = urllib.parse.quote(key, safe="") if "%" not in key else key
+
+    def _query_one(rid: str) -> tuple[bool, list[dict]]:
+        url = (
+            "https://apis.data.go.kr/1613000/BusLcInfoInqireService/getRouteAcctoBusLcList"
+            f"?serviceKey={encoded_key}&_type=json"
+            f"&cityCode={city_code}&routeId={rid}&numOfRows=50&pageNo=1"
+        )
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            header = payload.get("response", {}).get("header", {})
+            if header.get("resultCode") == "00":
+                body = payload.get("response", {}).get("body", {})
+                found = []
+                for b in _extract_tago_items(body):
+                    found.append(
+                        {
+                            "route_id": rid,
+                            "vehicleno": str(b.get("vehicleno", "운행차량")),
+                            "nodenm": str(b.get("nodenm", "이동 중")),
+                            "nodeord": int(b.get("nodeord", 0) or 0),
+                            "lat": float(b.get("gpslati", 0) or 0),
+                            "lng": float(b.get("gpslong", 0) or 0),
+                        }
+                    )
+                return True, found
+        except Exception:
+            pass
+        return False, []
+
+    buses: list[dict] = []
+    any_success = False
+    target_rids = route_ids[:8]
+    with ThreadPoolExecutor(max_workers=min(6, len(target_rids))) as pool:
+        for ok, items in pool.map(_query_one, target_rids):
+            if ok:
+                any_success = True
+                buses.extend(items)
+
+    return buses, ("ok" if any_success else "error")
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def fetch_stop_arrival_eta(city_code: int, node_id: str, route_ids: tuple[str, ...]) -> dict | None:
+    """
+    국토교통부(TAGO) 버스도착정보 (ArvlInfoInqireService)
+    - 공공데이터포털에서 '국토교통부_(TAGO)_버스도착정보' 활용신청이 완료되면
+      별도 코드 수정 없이 자동으로 실시간 도착 예정(분/남은 정거장)을 표시합니다.
+    """
+    key = get_api_key()
+    if not key or not node_id:
+        return None
+    encoded_key = urllib.parse.quote(key, safe="") if "%" not in key else key
+    url = (
+        "https://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList"
+        f"?serviceKey={encoded_key}&_type=json"
+        f"&cityCode={city_code}&nodeId={node_id}&numOfRows=50&pageNo=1"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        header = payload.get("response", {}).get("header", {})
+        if header.get("resultCode") != "00":
+            return None
+        body = payload.get("response", {}).get("body", {})
+        matched = []
+        for it in _extract_tago_items(body):
+            rid = str(it.get("routeid", ""))
+            if not route_ids or rid in route_ids:
+                sec = int(it.get("arrtime", 0) or 0)
+                cnt = int(it.get("arrprevstationcnt", 0) or 0)
+                if sec > 0:
+                    matched.append(
+                        {
+                            "arr_min": max(1, round(sec / 60)),
+                            "prev_cnt": cnt,
+                            "routeno": str(it.get("routeno", "")),
+                        }
+                    )
+        if matched:
+            matched.sort(key=lambda x: x["arr_min"])
+            return matched[0]
+    except Exception:
+        return None
+    return None
 
 
 # =============================================================================
-# 정직한 공식 시간표 기반 계산 함수 (가짜 GPS · 가짜 도로정체 제거)
+# 3. 인터랙티브 노선 · 실시간 버스 위치 지도 (Leaflet + Carto Voyager)
 # =============================================================================
 
-MAJOR_HUBS = ["금산읍", "진산", "마전", "복수", "금성", "군북", "제원", "부리", "하금", "남일(초현)"]
+def render_route_map(
+    route_points: list[dict],
+    live_buses: list[dict],
+    accent_hex: str = "#3B82F6",
+) -> None:
+    """선택 구간의 출발·경유·도착 정류장과 실시간 운행 버스(🚌)를 지도 위에 표시"""
+    pts_json = json.dumps(route_points, ensure_ascii=False)
+    valid_buses = [b for b in live_buses if 34.0 < b.get("lat", 0) < 38.5 and 125.5 < b.get("lng", 0) < 129.5]
+    bus_json = json.dumps(valid_buses, ensure_ascii=False)
 
-QUICK_GEUMSAN_PRESETS = [
-    {"label": "🏡 진산 ➔ 금산읍", "origin": "진산", "dest": "금산읍"},
-    {"label": "🏡 금산읍 ➔ 진산", "origin": "금산읍", "dest": "진산"},
-    {"label": "🏥 마전 ➔ 금산읍", "origin": "마전", "dest": "금산읍"},
-    {"label": "🌿 금산읍 ➔ 수통리", "origin": "금산읍", "dest": "수통리"},
+    map_html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * {{ box-sizing: border-box; font-family: 'Pretendard', -apple-system, 'Malgun Gothic', sans-serif; }}
+  html, body {{ margin: 0; padding: 0; background: transparent; }}
+  .map-wrap {{
+    position: relative;
+    width: 100%;
+    height: 300px;
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1.5px solid #E2E8F0;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    background: #F8FAFC;
+  }}
+  #map {{ width: 100%; height: 100%; }}
+  .map-legend {{
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 600;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(6px);
+    border: 1px solid #E2E8F0;
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #334155;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  }}
+  .pin-chip {{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #FFFFFF;
+    color: #0F172A;
+    border: 2px solid {accent_hex};
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.14);
+    transform: translate(-50%, -115%);
+  }}
+  .pin-chip.dest {{
+    background: {accent_hex};
+    color: #FFFFFF;
+  }}
+  .bus-chip {{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #EF4444;
+    color: #FFFFFF;
+    border: 2px solid #FFFFFF;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.42);
+    transform: translate(-50%, -50%);
+    animation: pulseBus 1.8s infinite;
+  }}
+  @keyframes pulseBus {{
+    0% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }}
+    70% {{ box-shadow: 0 0 0 9px rgba(239, 68, 68, 0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }}
+  }}
+</style>
+</head>
+<body>
+<div class="map-wrap">
+  <div id="map"></div>
+  <div class="map-legend" id="legendBox"></div>
+</div>
+<script>
+  const pts = {pts_json};
+  const buses = {bus_json};
+
+  const legend = document.getElementById('legendBox');
+  if (buses.length > 0) {{
+    legend.innerHTML = '🔴 실시간 버스 ' + buses.length + '대 위치 표시중';
+  }} else {{
+    legend.innerHTML = '🗺️ 선택 구간 노선 지도 (현재 운행중 차량 없음)';
+  }}
+
+  const map = L.map('map', {{ zoomControl: true, attributionControl: false }});
+  L.tileLayer('https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png', {{
+    maxZoom: 18
+  }}).addTo(map);
+
+  const bounds = [];
+  const lineCoords = pts.map(p => [p.lat, p.lng]);
+
+  if (lineCoords.length > 1) {{
+    L.polyline(lineCoords, {{
+      color: '{accent_hex}',
+      weight: 5,
+      opacity: 0.82,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }}).addTo(map);
+  }}
+
+  pts.forEach((p) => {{
+    bounds.push([p.lat, p.lng]);
+    if (p.role === 'origin' || p.role === 'dest') {{
+      const cls = p.role === 'dest' ? 'pin-chip dest' : 'pin-chip';
+      const label = p.role === 'origin' ? '출발 · ' + p.name : '도착 · ' + p.name;
+      L.circleMarker([p.lat, p.lng], {{
+        radius: 6,
+        fillColor: p.role === 'dest' ? '{accent_hex}' : '#FFFFFF',
+        color: '{accent_hex}',
+        weight: 3,
+        fillOpacity: 1
+      }}).addTo(map);
+      const icon = L.divIcon({{
+        className: '',
+        html: '<div class="' + cls + '">' + label + '</div>',
+        iconSize: [0, 0]
+      }});
+      L.marker([p.lat, p.lng], {{ icon, zIndexOffset: 500 }}).addTo(map);
+    }} else {{
+      L.circleMarker([p.lat, p.lng], {{
+        radius: 4,
+        fillColor: '#FFFFFF',
+        color: '{accent_hex}',
+        weight: 2,
+        fillOpacity: 1
+      }}).bindTooltip(p.name, {{ direction: 'top', offset: [0, -4] }}).addTo(map);
+    }}
+  }});
+
+  buses.forEach((b) => {{
+    bounds.push([b.lat, b.lng]);
+    const bIcon = L.divIcon({{
+      className: '',
+      html: '<div class="bus-chip">🚌 ' + b.nodenm + '</div>',
+      iconSize: [0, 0]
+    }});
+    L.marker([b.lat, b.lng], {{ icon: bIcon, zIndexOffset: 1000 }})
+      .bindPopup('<b>🚌 실시간 운행 차량</b><br/>최근 정류장: ' + b.nodenm + '<br/>차량번호: ' + b.vehicleno)
+      .addTo(map);
+  }});
+
+  if (bounds.length === 1) {{
+    map.setView(bounds[0], 13);
+  }} else if (bounds.length > 1) {{
+    map.fitBounds(bounds, {{ padding: [38, 38] }});
+  }}
+</script>
+</body>
+</html>"""
+
+    if hasattr(st, "iframe"):
+        st.iframe(map_html, height=308)
+    else:
+        components.html(map_html, height=308, scrolling=False)
+
+
+# =============================================================================
+# 4. 경로 · 시간표 계산 엔진
+# =============================================================================
+
+MAJOR_HUBS = ["금산읍", "진산", "복수", "마전", "제원", "군북", "금성", "부리", "남일(초현)", "하금"]
+
+QUICK_GEUMSAN = [
+    {"label": "금산읍 → 진산", "origin": "금산읍", "dest": "진산"},
+    {"label": "진산 → 금산읍", "origin": "진산", "dest": "금산읍"},
+    {"label": "금산읍 → 마전", "origin": "금산읍", "dest": "마전"},
+    {"label": "진산 → 대전(81번)", "origin": "진산", "dest": "서남부터미널(대전)"},
 ]
 
-QUICK_DJ34_PRESETS = [
-    {"label": "⬆️ 진산 ➔ 대전 서남부터미널", "dir": "to_daejeon", "origin": "진산", "dest": "서남부터미널종점"},
-    {"label": "⬆️ 복수면사무소 ➔ 대전 서남부터미널", "dir": "to_daejeon", "origin": "복수면사무소", "dest": "서남부터미널종점"},
-    {"label": "⬇️ 대전서남부터미널 ➔ 복수면사무소", "dir": "to_daedun", "origin": "대전서남부터미널", "dest": "복수면사무소"},
-    {"label": "⬇️ 대전서남부터미널 ➔ 진산", "dir": "to_daedun", "origin": "대전서남부터미널", "dest": "진산"},
+QUICK_DJ34 = [
+    {"label": "진산 → 대전", "dir": "to_daejeon", "o": "진산", "d": "서남부터미널종점"},
+    {"label": "복수 → 대전", "dir": "to_daejeon", "o": "복수면사무소", "d": "서남부터미널종점"},
+    {"label": "대전 → 복수", "dir": "to_daedun", "o": "대전서남부터미널", "d": "복수면사무소"},
+    {"label": "대전 → 진산", "dir": "to_daedun", "o": "대전서남부터미널", "d": "진산"},
 ]
 
 
@@ -2094,21 +1895,20 @@ def parse_hhmm_to_min(hhmm: str) -> int:
 
 
 def min_to_hhmm(total_min: int) -> str:
-    m = total_min % (24 * 60)
-    return f"{m // 60:02d}:{m % 60:02d}"
+    m_mod = total_min % (24 * 60)
+    return f"{m_mod // 60:02d}:{m_mod % 60:02d}"
 
 
 def format_remain_str(diff_min: int) -> str:
     if diff_min <= 0:
-        return "곧 출발"
+        return "곧 도착"
     if diff_min < 60:
-        return f"{diff_min}분 남음"
+        return f"{diff_min}분 후"
     h, m = divmod(diff_min, 60)
-    return f"{h}시간 {m}분 남음" if m else f"{h}시간 남음"
+    return f"{h}시간 {m}분 후" if m else f"{h}시간 후"
 
 
 def estimate_segment_min(u: str, v: str) -> int:
-    """노선도 거리 기반 정류장 간 평균 이동시간(분) 단순 추정"""
     if u == v:
         return 0
     nu, nv = NODES.get(u), NODES.get(v)
@@ -2127,150 +1927,92 @@ def get_sorted_stops() -> list[str]:
 def get_reachable_stops(origin: str) -> set[str]:
     reach = set()
     for info in BUS_ROUTES.values():
-        stops = info["stops"]
-        if origin in stops:
-            for s in stops:
-                if s != origin:
-                    reach.add(s)
+        if origin in info["stops"]:
+            reach.update(s for s in info["stops"] if s != origin)
     return reach
 
 
-def format_stop_option(stop_name: str, direct_set: set[str] | None = None) -> str:
-    reg = NODES[stop_name]["region"]
-    prefix = "⭐ " if NODES[stop_name]["hub"] else ""
-    if direct_set is not None:
-        tag = " · 직통" if stop_name in direct_set else " · 환승"
-        return f"{prefix}{stop_name} ({reg}{tag})"
-    return f"{prefix}{stop_name} ({reg})"
-
-
 def evaluate_geumsan_route(bus_no: str, origin: str, dest: str, now_min: int) -> dict | None:
-    """출발지->도착지를 잇는 직통 노선의 공식 기점 출발 시각 및 예상 소요시간 계산"""
     info = BUS_ROUTES[bus_no]
     stops = info["stops"]
     if origin not in stops or dest not in stops or origin == dest:
         return None
 
-    idx_o = stops.index(origin)
-    idx_d = stops.index(dest)
-
-    if idx_o < idx_d:
-        active_stops = stops
-        raw_times = info["out_times"]
-    else:
-        active_stops = list(reversed(stops))
-        raw_times = info["in_times"] if info["in_times"] else info["out_times"]
+    forward = stops.index(origin) < stops.index(dest)
+    active_stops = stops if forward else list(reversed(stops))
+    raw_times = info["out_times"] if forward else (info["in_times"] or info["out_times"])
 
     o_pos = active_stops.index(origin)
     d_pos = active_stops.index(dest)
-    start_terminal = active_stops[0]
-    end_terminal = active_stops[-1]
+    offset_to_origin = sum(estimate_segment_min(active_stops[i], active_stops[i + 1]) for i in range(o_pos))
+    ride_min = sum(estimate_segment_min(active_stops[i], active_stops[i + 1]) for i in range(o_pos, d_pos))
 
-    # 기점->승차 정류장 평균 소요시간, 승차->하차 평균 이동시간
-    offset_to_origin = sum(
-        estimate_segment_min(active_stops[i], active_stops[i + 1]) for i in range(o_pos)
-    )
-    ride_min = sum(
-        estimate_segment_min(active_stops[i], active_stops[i + 1]) for i in range(o_pos, d_pos)
-    )
-
-    sched_entries = sorted(
-        [(parse_hhmm_to_min(t), t) for t in raw_times],
-        key=lambda x: x[0],
-    )
+    sched_entries = sorted([(parse_hhmm_to_min(t), t) for t in raw_times], key=lambda x: x[0])
     if not sched_entries:
         return None
 
-    # 내 정류장 예상 통과 시각(기점 출발 + offset_to_origin) 기준으로 아직 안 지나간 다음 차 탐색
-    upcoming = []
-    for dep_m, dep_str in sched_entries:
-        est_board_m = dep_m + offset_to_origin
-        if est_board_m >= now_min:
-            upcoming.append((dep_m, dep_str, est_board_m))
-
+    upcoming = [(dm, ds, dm + offset_to_origin) for dm, ds in sched_entries if dm + offset_to_origin >= now_min]
     first_dep_m, first_dep_str = sched_entries[0]
+
     if upcoming:
-        next_dep_m, next_dep_str, next_board_m = upcoming[0]
+        _, next_dep_str, next_board_m = upcoming[0]
         wait_from_now = next_board_m - now_min
-        dep_diff_from_now = next_dep_m - now_min
         rem_count = len(upcoming)
         is_ended = False
-        if rem_count == 1:
-            lb_level, lb_badge = "last", "🚨 오늘 마지막 차(막차)"
-        elif rem_count == 2:
-            lb_level, lb_badge = "warn", "⏰ 막차 1대 전"
-        else:
-            lb_level, lb_badge = "ok", f"오늘 {rem_count}회 남음"
+        badge = "오늘 막차" if rem_count == 1 else f"오늘 {rem_count}회 남음"
     else:
-        next_dep_m = first_dep_m
         next_dep_str = first_dep_str
         next_board_m = first_dep_m + offset_to_origin
         wait_from_now = (24 * 60 - now_min) + next_board_m
-        dep_diff_from_now = (24 * 60 - now_min) + first_dep_m
         rem_count = 0
         is_ended = True
-        lb_level, lb_badge = "ended", f"🌙 오늘 운행 종료 (첫차 {first_dep_str})"
+        badge = f"운행 종료 · 첫차 {first_dep_str}"
 
     return {
         "bus_no": bus_no,
         "name": info["name"],
-        "category": info["category"],
-        "region": info["region"],
         "desc": info["desc"],
-        "start_terminal": start_terminal,
-        "end_terminal": end_terminal,
+        "start_terminal": active_stops[0],
         "active_stops": active_stops,
+        "o_pos": o_pos,
+        "d_pos": d_pos,
         "offset_to_origin": offset_to_origin,
         "ride_min": ride_min,
         "all_dep_times": [s for _, s in sched_entries],
-        "next_dep_m": next_dep_m,
         "next_dep_str": next_dep_str,
-        "next_board_m": next_board_m,
         "next_board_str": min_to_hhmm(next_board_m),
-        "est_alight_str": min_to_hhmm(next_board_m + ride_min),
         "wait_from_now": wait_from_now,
-        "dep_diff_from_now": dep_diff_from_now,
         "rem_count": rem_count,
         "is_ended": is_ended,
-        "lb_level": lb_level,
-        "lb_badge": lb_badge,
+        "badge": badge,
     }
 
 
 def find_all_geumsan_options(origin: str, dest: str, now_min: int) -> list[dict]:
-    results = []
-    for bno in BUS_ROUTES:
-        ev = evaluate_geumsan_route(bno, origin, dest, now_min)
-        if ev is not None:
-            results.append(ev)
-    # 오늘 운행 중인 버스 우선 -> 내 정류장 예상 도착이 빠른 순
+    results = [ev for bno in BUS_ROUTES if (ev := evaluate_geumsan_route(bno, origin, dest, now_min))]
     results.sort(key=lambda x: (1 if x["is_ended"] else 0, x["wait_from_now"], x["ride_min"]))
     return results
 
 
 def find_simple_transfer(origin: str, dest: str, now_min: int) -> dict | None:
-    """직통이 없을 때 주요 거점(금산읍·진산·마전·복수 등) 1회 환승 탐색"""
     best = None
     for hub in MAJOR_HUBS:
         if hub in (origin, dest) or hub not in NODES:
             continue
-        leg1_list = find_all_geumsan_options(origin, hub, now_min)
-        leg2_list = find_all_geumsan_options(hub, dest, now_min)
-        if leg1_list and leg2_list:
-            l1, l2 = leg1_list[0], leg2_list[0]
-            score = l1["wait_from_now"] + l1["ride_min"] + l2["ride_min"]
+        l1 = find_all_geumsan_options(origin, hub, now_min)
+        l2 = find_all_geumsan_options(hub, dest, now_min)
+        if l1 and l2:
+            score = l1[0]["wait_from_now"] + l1[0]["ride_min"] + l2[0]["ride_min"]
             if best is None or score < best["score"]:
-                best = {"hub": hub, "leg1": l1, "leg2": l2, "score": score}
+                best = {"hub": hub, "leg1": l1[0], "leg2": l2[0], "score": score}
     return best
 
 
 def evaluate_daejeon_34(direction_key: str, origin_name: str, dest_name: str, now_min: int) -> dict:
-    """대전 외곽버스 34번 공식 기점 시간표 기반 계산"""
     to_daedun = direction_key == "to_daedun"
     stops = DAEJEON_34_STOPS_TO_DAEDUN if to_daedun else DAEJEON_34_STOPS_TO_DAEJEON
     col_key = "seonambu" if to_daedun else "daedunsan"
     start_terminal = "서남부터미널기점" if to_daedun else "대둔산휴게소"
-    dir_title = "대전 서남부터미널 ➔ 복수 · 진산 · 대둔산" if to_daedun else "대둔산 · 진산 · 복수 ➔ 대전 서남부터미널"
 
     names = [s["name"] for s in stops]
     idx_o = names.index(origin_name) if origin_name in names else 0
@@ -2278,411 +2020,305 @@ def evaluate_daejeon_34(direction_key: str, origin_name: str, dest_name: str, no
     if idx_d <= idx_o:
         idx_d = min(len(stops) - 1, idx_o + 1)
 
-    o_item = stops[idx_o]
-    d_item = stops[idx_d]
+    o_item, d_item = stops[idx_o], stops[idx_d]
     offset_o = o_item["min"]
     ride_min = max(2, d_item["min"] - o_item["min"])
 
     dep_times = [row[col_key] for row in DAEJEON_34_TIMETABLE]
     sched_entries = [(parse_hhmm_to_min(t), t) for t in dep_times]
+    upcoming = [(dm, ds, dm + offset_o) for dm, ds in sched_entries if dm + offset_o >= now_min]
 
-    upcoming = []
-    for dep_m, dep_str in sched_entries:
-        est_board_m = dep_m + offset_o
-        if est_board_m >= now_min:
-            upcoming.append((dep_m, dep_str, est_board_m))
-
-    first_dep_m, first_dep_str = sched_entries[0]
     if upcoming:
-        next_dep_m, next_dep_str, next_board_m = upcoming[0]
+        _, next_dep_str, next_board_m = upcoming[0]
         wait_from_now = next_board_m - now_min
         rem_count = len(upcoming)
         is_ended = False
-        if rem_count == 1:
-            lb_level, lb_badge = "last", "🚨 오늘 마지막 34번(막차)"
-        elif rem_count == 2:
-            lb_level, lb_badge = "warn", "⏰ 막차 1대 전"
-        else:
-            lb_level, lb_badge = "ok", f"오늘 {rem_count}회 남음"
+        badge = "오늘 막차" if rem_count == 1 else f"오늘 {rem_count}회 남음"
     else:
-        next_dep_m = first_dep_m
-        next_dep_str = first_dep_str
-        next_board_m = first_dep_m + offset_o
+        _, next_dep_str = sched_entries[0]
+        next_board_m = sched_entries[0][0] + offset_o
         wait_from_now = (24 * 60 - now_min) + next_board_m
         rem_count = 0
         is_ended = True
-        lb_level, lb_badge = "ended", f"🌙 오늘 운행 종료 (첫차 {first_dep_str})"
+        badge = f"운행 종료 · 첫차 {sched_entries[0][1]}"
 
     return {
-        "dir_title": dir_title,
-        "start_terminal": start_terminal,
         "stops": stops,
+        "idx_o": idx_o,
+        "idx_d": idx_d,
         "origin_item": o_item,
         "dest_item": d_item,
+        "start_terminal": start_terminal,
         "offset_o": offset_o,
         "ride_min": ride_min,
         "dep_times": dep_times,
         "next_dep_str": next_dep_str,
         "next_board_str": min_to_hhmm(next_board_m),
-        "est_alight_str": min_to_hhmm(next_board_m + ride_min),
         "wait_from_now": wait_from_now,
-        "rem_count": rem_count,
         "is_ended": is_ended,
-        "lb_level": lb_level,
-        "lb_badge": lb_badge,
+        "badge": badge,
     }
 
 
-def _embed_html(html_code: str, height: int) -> None:
-    if hasattr(st, "iframe"):
-        st.iframe(html_code, height=height)
-    else:
-        components.html(html_code, height=height, scrolling=False)
-
-
-def render_tts_button(tts_text: str) -> None:
-    """어르신용 깔끔한 한국어 음성 안내 버튼"""
-    safe_json = json.dumps(tts_text, ensure_ascii=False)
-    code = f"""<!DOCTYPE html>
-<html lang="ko"><head><meta charset="utf-8">
-<style>
-  * {{ box-sizing: border-box; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; }}
-  body {{ margin: 0; padding: 0; background: transparent; }}
-  .wrap {{ display: flex; gap: 8px; align-items: center; }}
-  .btn-play {{
-    flex: 1; background: #1D4ED8; color: #fff; border: none; border-radius: 12px;
-    padding: 12px 16px; font-size: 1rem; font-weight: 800; cursor: pointer;
-  }}
-  .btn-stop {{
-    background: #F1F5F9; color: #334155; border: 1.5px solid #CBD5E1; border-radius: 12px;
-    padding: 12px 14px; font-size: 0.95rem; font-weight: 700; cursor: pointer;
-  }}
-</style></head>
-<body>
-  <div class="wrap">
-    <button class="btn-play" id="playBtn" onclick="speakBus()">🔊 소리로 안내 듣기</button>
-    <button class="btn-stop" onclick="stopBus()">⏹️ 멈춤</button>
-  </div>
-  <script>
-    const msgText = {safe_json};
-    function speakBus() {{
-      if (!('speechSynthesis' in window)) {{
-        alert('이 브라우저에서는 음성 안내를 지원하지 않습니다.');
-        return;
-      }}
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(msgText);
-      u.lang = 'ko-KR';
-      u.rate = 0.92;
-      const btn = document.getElementById('playBtn');
-      u.onstart = () => {{ btn.innerText = '🔊 안내 읽는 중...'; }};
-      u.onend = () => {{ btn.innerText = '🔊 소리로 안내 듣기'; }};
-      u.onerror = () => {{ btn.innerText = '🔊 소리로 안내 듣기'; }};
-      window.speechSynthesis.speak(u);
-    }}
-    function stopBus() {{
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-      document.getElementById('playBtn').innerText = '🔊 소리로 안내 듣기';
-    }}
-  </script>
-</body></html>"""
-    _embed_html(code, height=54)
-
-
-def render_time_badges(times: list[str], offset_min: int, now_min: int, accent_green: bool = False) -> str:
-    """오늘 출발 시간표를 지난 차 / 다음 차 / 이후 차 / 막차 배지로 깔끔하게 표시"""
+def render_time_chips(dep_times: list[str], offset_min: int, now_min: int, green: bool = False) -> str:
     chips = []
     marked_next = False
-    for idx, t_str in enumerate(times):
-        dep_m = parse_hhmm_to_min(t_str)
-        board_m = dep_m + offset_min
-        is_last = idx == len(times) - 1
-        if board_m >= now_min and not marked_next:
+    for i, t_str in enumerate(dep_times):
+        pass_m = parse_hhmm_to_min(t_str) + offset_min
+        if pass_m < now_min:
+            cls = "chip past"
+        elif not marked_next:
+            cls = "chip next-g" if green else "chip next-b"
             marked_next = True
-            cls = "t-next-green" if accent_green else "t-next-blue"
-            suffix = " · 막차" if is_last else " · 다음차"
-            chips.append(f"<span class='t-chip {cls}'>🚌 {t_str}{suffix}</span>")
-        elif board_m < now_min:
-            chips.append(f"<span class='t-chip t-past'>{t_str}</span>")
-        elif is_last:
-            chips.append(f"<span class='t-chip t-last'>{t_str} (막차)</span>")
+        elif i == len(dep_times) - 1:
+            cls = "chip last"
         else:
-            chips.append(f"<span class='t-chip t-future'>{t_str}</span>")
+            cls = "chip"
+        chips.append(f'<span class="{cls}">{html.escape(t_str)}</span>')
     return "".join(chips)
 
 
 # =============================================================================
-# 세션 상태 초기화 (단순 · 명확)
+# 5. 세션 상태 초기화 및 정돈된 미니멀 · 아기자기 UI 스타일
 # =============================================================================
 
-if "tab" not in st.session_state:
-    st.session_state.tab = "geumsan"
-if "g_origin" not in st.session_state:
-    st.session_state.g_origin = "금산읍"
-if "g_dest" not in st.session_state:
-    st.session_state.g_dest = "진산"
-if "dj_dir" not in st.session_state:
-    st.session_state.dj_dir = "to_daejeon"
-if "dj_origin" not in st.session_state:
-    st.session_state.dj_origin = "진산"
-if "dj_dest" not in st.session_state:
-    st.session_state.dj_dest = "서남부터미널종점"
-if "large_text" not in st.session_state:
-    st.session_state.large_text = False
-if "show_dj_stops" not in st.session_state:
-    st.session_state.show_dj_stops = False
-
-
-def set_tab(tab_name: str) -> None:
-    st.session_state.tab = tab_name
-
-
-def set_geumsan_pair(o: str, d: str) -> None:
-    st.session_state.tab = "geumsan"
-    st.session_state.g_origin = o
-    st.session_state.g_dest = d
-
-
-def swap_geumsan_pair() -> None:
-    st.session_state.g_origin, st.session_state.g_dest = (
-        st.session_state.g_dest,
-        st.session_state.g_origin,
-    )
-
-
-def set_dj34_dir(d_key: str) -> None:
-    st.session_state.dj_dir = d_key
-    if d_key == "to_daejeon":
-        st.session_state.dj_origin = "진산"
-        st.session_state.dj_dest = "서남부터미널종점"
-    else:
-        st.session_state.dj_origin = "대전서남부터미널"
-        st.session_state.dj_dest = "진산"
-
-
-def set_dj34_preset(d_key: str, o: str, d: str) -> None:
-    st.session_state.tab = "dj34"
-    st.session_state.dj_dir = d_key
-    st.session_state.dj_origin = o
-    st.session_state.dj_dest = d
-
-
-# =============================================================================
-# 심플 & 모바일 고가독성 스타일 (사이드바 숨김 · 큰 터치 버튼)
-# =============================================================================
-
-base_zoom = "1.12rem" if st.session_state.large_text else "1.0rem"
+DEFAULTS = {
+    "tab": "geumsan",
+    "g_origin": "금산읍",
+    "g_dest": "진산",
+    "dj_dir": "to_daejeon",
+    "dj_origin": "진산",
+    "dj_dest": "서남부터미널종점",
+}
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 st.markdown(
-    f"""
+    """
 <style>
-  /* 불필요한 좌측 사이드바 버튼 숨김 -> 완벽한 단일 화면 */
-  [data-testid="stSidebar"], [data-testid="collapsedControl"] {{
-      display: none !important;
-  }}
-  html, body, [class*="css"] {{
-      font-size: {base_zoom};
-      font-family: 'Pretendard', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-  }}
-  .block-container {{
-      padding-top: 1.4rem !important;
-      padding-bottom: 3rem !important;
-      max-width: 760px !important;
-  }}
-  /* 모든 버튼을 휴대폰 엄지로 누르기 편한 사이트 버튼으로 통일 */
-  div.stButton > button {{
-      min-height: 50px !important;
+  [data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none !important; }
+  .stApp { background-color: #F6F8FB; }
+  html, body, [class*="css"] {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      color: #0F172A;
+  }
+  .block-container {
+      max-width: 660px !important;
+      padding-top: 1.15rem !important;
+      padding-bottom: 2.8rem !important;
+  }
+  div.stButton > button {
+      min-height: 44px !important;
       border-radius: 14px !important;
-      font-weight: 800 !important;
-      font-size: 0.98rem !important;
-      padding: 0.55rem 0.9rem !important;
-      transition: all 0.12s ease !important;
-  }}
-  div.stButton > button[kind="secondary"] {{
+      font-weight: 700 !important;
+      font-size: 0.9rem !important;
+      transition: all 0.14s ease !important;
+  }
+  div.stButton > button[kind="secondary"] {
       background: #FFFFFF !important;
-      border: 1.5px solid #CBD5E1 !important;
-      color: #1E293B !important;
-  }}
-  div.stButton > button[kind="secondary"]:hover {{
-      border-color: #2563EB !important;
-      color: #2563EB !important;
-      background: #EFF6FF !important;
-  }}
-  div.stButton > button[kind="primary"] {{
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22) !important;
-  }}
-  /* 모바일에서도 상단 2열 버튼이 세로로 깨지지 않게 유지 */
-  @media (max-width: 640px) {{
-      div[data-testid="stHorizontalBlock"] {{
+      border: 1px solid #E2E8F0 !important;
+      color: #334155 !important;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  }
+  div.stButton > button[kind="secondary"]:hover {
+      border-color: #93C5FD !important;
+      background: #F8FAFC !important;
+      color: #1D4ED8 !important;
+  }
+  @media (max-width: 640px) {
+      div[data-testid="stHorizontalBlock"] {
           display: flex !important;
           flex-direction: row !important;
           flex-wrap: wrap !important;
-          gap: 8px !important;
-      }}
-      div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
-          flex: 1 1 calc(50% - 8px) !important;
-          min-width: 140px !important;
-      }}
-  }}
-  .app-header {{
+          gap: 6px !important;
+      }
+      div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+          flex: 1 1 calc(50% - 6px) !important;
+          min-width: 130px !important;
+      }
+  }
+  .header-card {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
-  }}
-  .app-title {{
-      font-size: 1.35rem;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 18px;
+      padding: 11px 16px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+  }
+  .header-title {
+      font-size: 1.08rem;
       font-weight: 900;
-      color: #0F172A;
       letter-spacing: -0.02em;
-  }}
-  .clock-pill {{
-      background: #F1F5F9;
-      color: #334155;
+      color: #0F172A;
+  }
+  .hero-box {
+      background: #FFFFFF;
+      border: 1.5px solid #DBEAFE;
+      border-radius: 22px;
+      padding: 18px 20px;
+      margin: 8px 0 10px 0;
+      box-shadow: 0 8px 22px rgba(59, 130, 246, 0.06);
+  }
+  .hero-box.green {
+      border-color: #BBF7D0;
+      box-shadow: 0 8px 22px rgba(16, 185, 129, 0.07);
+  }
+  .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
       border-radius: 999px;
-      padding: 5px 12px;
-      font-size: 0.85rem;
+      font-size: 0.76rem;
       font-weight: 800;
-  }}
-  .main-card {{
-      background: #FFFFFF;
-      border: 2px solid #2563EB;
-      border-radius: 20px;
-      padding: 20px 22px;
-      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.08);
-      margin: 10px 0 12px 0;
-  }}
-  .main-card-green {{
-      background: #FFFFFF;
-      border: 2px solid #16A34A;
-      border-radius: 20px;
-      padding: 20px 22px;
-      box-shadow: 0 6px 20px rgba(22, 163, 74, 0.09);
-      margin: 10px 0 12px 0;
-  }}
-  .sub-card {{
-      background: #FFFFFF;
-      border: 1.5px solid #E2E8F0;
-      border-radius: 16px;
-      padding: 16px 18px;
-      margin-bottom: 12px;
-  }}
-  .big-time {{
-      font-size: 2.1rem;
+  }
+  .pill-live { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+  .pill-blue { background: #EFF6FF; color: #1D4ED8; }
+  .pill-green { background: #ECFDF5; color: #047857; }
+  .pill-muted { background: #F1F5F9; color: #475569; }
+  .eta-big {
+      font-size: 1.72rem;
       font-weight: 900;
-      color: #1D4ED8;
-      line-height: 1.15;
-  }}
-  .big-time-green {{
-      font-size: 2.1rem;
-      font-weight: 900;
-      color: #15803D;
-      line-height: 1.15;
-  }}
-  .badge-ok {{ background:#DCFCE7; color:#166534; padding:5px 11px; border-radius:999px; font-size:0.84rem; font-weight:800; }}
-  .badge-warn {{ background:#FEF3C7; color:#92400E; padding:5px 11px; border-radius:999px; font-size:0.84rem; font-weight:800; }}
-  .badge-last {{ background:#FEE2E2; color:#B91C1C; padding:5px 11px; border-radius:999px; font-size:0.84rem; font-weight:900; }}
-  .badge-ended {{ background:#E2E8F0; color:#475569; padding:5px 11px; border-radius:999px; font-size:0.84rem; font-weight:800; }}
-  .t-chip {{
-      display: inline-block;
-      padding: 7px 12px;
-      border-radius: 10px;
-      font-weight: 800;
-      font-size: 0.94rem;
-      margin: 4px 4px 4px 0;
-  }}
-  .t-past {{ background: #F1F5F9; color: #94A3B8; text-decoration: line-through; font-weight: 600; }}
-  .t-next-blue {{ background: #2563EB; color: #FFFFFF; }}
-  .t-next-green {{ background: #16A34A; color: #FFFFFF; }}
-  .t-future {{ background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1; }}
-  .t-last {{ background: #FEF2F2; color: #DC2626; border: 1.5px solid #FCA5A5; }}
-  .honest-note {{
-      font-size: 0.82rem;
+      letter-spacing: -0.02em;
+      color: #0F172A;
+      margin: 7px 0 4px 0;
+      line-height: 1.2;
+  }
+  .eta-sub {
+      font-size: 0.87rem;
+      font-weight: 600;
       color: #64748B;
-      margin-top: 8px;
-  }}
+  }
+  .route-card {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-top: 10px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.02);
+  }
+  .chip {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin: 3px 4px 3px 0;
+      background: #F8FAFC;
+      color: #334155;
+      border: 1px solid #E2E8F0;
+  }
+  .chip.past {
+      color: #CBD5E1;
+      background: #F8FAFC;
+      border-color: #F1F5F9;
+      text-decoration: line-through;
+      font-weight: 500;
+  }
+  .chip.next-b {
+      background: #3B82F6;
+      color: #FFFFFF;
+      border-color: #3B82F6;
+      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.28);
+  }
+  .chip.next-g {
+      background: #10B981;
+      color: #FFFFFF;
+      border-color: #10B981;
+      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.28);
+  }
+  .chip.last {
+      background: #FFF1F2;
+      color: #E11D48;
+      border-color: #FECDD3;
+  }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 # =============================================================================
-# 상단 제목 + 큰 글씨 스위치 + 사이트 메뉴 버튼 2개
+# 6. 상단 바 & 노선 탭
 # =============================================================================
 
 now_dt = get_kst_now()
 now_min = now_dt.hour * 60 + now_dt.minute
 
-h_col1, h_col2 = st.columns([3.4, 1.3])
-with h_col1:
+top_l, top_r = st.columns([4.1, 1.2])
+with top_l:
     st.markdown(
         f"""
-<div class="app-header">
-  <div class="app-title">🚌 금산 · 대전34번 버스 시간표</div>
-  <span class="clock-pill">현재 {now_dt.strftime('%H:%M')}</span>
-</div>
-""",
+        <div class="header-card">
+          <span class="header-title">🚌 금산 · 대전34 버스</span>
+          <span class="pill pill-muted">🕒 {now_dt.strftime('%H:%M')} 기준</span>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-with h_col2:
-    st.session_state.large_text = st.toggle("🔍 큰 글씨", value=st.session_state.large_text)
+with top_r:
+    if st.button("🔄 새로고침", key="btn_refresh", **STRETCH_KW):
+        st.cache_data.clear()
+        st.rerun()
 
-# 최상단 사이트 메뉴 탭 버튼 딱 2개!
-menu_c1, menu_c2 = st.columns(2)
-with menu_c1:
-    st.button(
-        "🔵 금산 군내 · 공공형 버스",
-        key="nav_geumsan",
+tab_c1, tab_c2 = st.columns(2)
+with tab_c1:
+    if st.button(
+        "💙 금산 군내 · 공공형",
+        key="tab_geumsan",
         type="primary" if st.session_state.tab == "geumsan" else "secondary",
-        on_click=set_tab,
-        args=("geumsan",),
         **STRETCH_KW,
-    )
-with menu_c2:
-    st.button(
-        "🟢 대전 34번 (복수·진산↔대전)",
-        key="nav_dj34",
+    ):
+        st.session_state.tab = "geumsan"
+        st.rerun()
+with tab_c2:
+    if st.button(
+        "💚 대전 34번 (복수·진산↔대전)",
+        key="tab_dj34",
         type="primary" if st.session_state.tab == "dj34" else "secondary",
-        on_click=set_tab,
-        args=("dj34",),
         **STRETCH_KW,
-    )
+    ):
+        st.session_state.tab = "dj34"
+        st.rerun()
 
 
 # =============================================================================
-# [화면 1] 🔵 금산 군내 · 공공형 버스 (출발·도착만 고르면 끝!)
+# [탭 1] 금산 군내 · 공공형 버스
 # =============================================================================
 if st.session_state.tab == "geumsan":
-    st.caption("자주 타는 구간을 누르거나 아래에서 출발지·도착지만 고르세요. 버스 번호를 몰라도 다음 차를 바로 찾아줍니다.")
-
-    # 자주 타는 구간 원터치 버튼 4개
-    qp1, qp2, qp3, qp4 = st.columns(4)
-    for col_q, item in zip((qp1, qp2, qp3, qp4), QUICK_GEUMSAN_PRESETS):
-        with col_q:
-            is_active_preset = (
-                st.session_state.g_origin == item["origin"]
-                and st.session_state.g_dest == item["dest"]
+    q_cols = st.columns(4)
+    for col, preset in zip(q_cols, QUICK_GEUMSAN):
+        with col:
+            is_sel = (
+                st.session_state.g_origin == preset["origin"]
+                and st.session_state.g_dest == preset["dest"]
             )
-            st.button(
-                item["label"],
-                key=f"q_g_{item['origin']}_{item['dest']}",
-                type="primary" if is_active_preset else "secondary",
-                on_click=set_geumsan_pair,
-                args=(item["origin"], item["dest"]),
+            if st.button(
+                preset["label"],
+                key=f"qg_{preset['origin']}_{preset['dest']}",
+                type="primary" if is_sel else "secondary",
                 **STRETCH_KW,
-            )
+            ):
+                st.session_state.g_origin = preset["origin"]
+                st.session_state.g_dest = preset["dest"]
+                st.rerun()
 
     all_stops = get_sorted_stops()
+    reach_set = get_reachable_stops(st.session_state.g_origin)
+    dest_options = [s for s in all_stops if s != st.session_state.g_origin and s in reach_set] + [
+        s for s in all_stops if s != st.session_state.g_origin and s not in reach_set
+    ]
 
-    # 단순 2칸 선택 + 맞바꾸기 버튼
-    sel_c1, sel_c2, sel_c3 = st.columns([2.2, 2.2, 1.0])
-    with sel_c1:
+    sel_1, sel_2, sel_3 = st.columns([2.3, 2.3, 0.85])
+    with sel_1:
         o_idx = all_stops.index(st.session_state.g_origin) if st.session_state.g_origin in all_stops else 0
         picked_o = st.selectbox(
             "출발 정류장",
             options=all_stops,
             index=o_idx,
-            format_func=lambda s: format_stop_option(s),
+            format_func=lambda s: f"{'⭐ ' if NODES[s]['hub'] else ''}{s}",
         )
         if picked_o != st.session_state.g_origin:
             st.session_state.g_origin = picked_o
@@ -2690,390 +2326,328 @@ if st.session_state.tab == "geumsan":
                 st.session_state.g_dest = "진산" if picked_o != "진산" else "금산읍"
             st.rerun()
 
-    with sel_c2:
-        reach_set = get_reachable_stops(st.session_state.g_origin)
-        dest_candidates = (
-            [s for s in all_stops if s != st.session_state.g_origin and s in reach_set]
-            + [s for s in all_stops if s != st.session_state.g_origin and s not in reach_set]
-        )
-        d_idx = (
-            dest_candidates.index(st.session_state.g_dest)
-            if st.session_state.g_dest in dest_candidates
-            else 0
-        )
+    with sel_2:
+        d_idx = dest_options.index(st.session_state.g_dest) if st.session_state.g_dest in dest_options else 0
         picked_d = st.selectbox(
             "도착 정류장",
-            options=dest_candidates,
+            options=dest_options,
             index=d_idx,
-            format_func=lambda s: format_stop_option(s, reach_set),
+            format_func=lambda s: f"{s} ({'직통' if s in reach_set else '환승'})",
         )
         if picked_d != st.session_state.g_dest:
             st.session_state.g_dest = picked_d
             st.rerun()
 
-    with sel_c3:
+    with sel_3:
         st.write("")
-        st.button("🔄 바꾸기", key="btn_swap_g", on_click=swap_geumsan_pair, **STRETCH_KW)
+        if st.button("⇄", key="swap_g", help="출발·도착 바꾸기", **STRETCH_KW):
+            st.session_state.g_origin, st.session_state.g_dest = (
+                st.session_state.g_dest,
+                st.session_state.g_origin,
+            )
+            st.rerun()
 
     g_origin = st.session_state.g_origin
     g_dest = st.session_state.g_dest
-
-    # 진산·복수 등 34번 정차 지역이면 대전 34번 바로가기 한 줄 안내
-    if g_origin in ("진산", "복수", "구만리", "신대", "백암리", "배티재(대둔산)") or g_dest in (
-        "진산", "복수", "구만리", "신대", "백암리", "배티재(대둔산)"
-    ):
-        b_c1, b_c2 = st.columns([3.2, 1.3])
-        b_c1.info("💡 **복수 · 진산 · 대둔산 ↔ 대전 서남부터미널**은 **대전 34번 버스(일 22회)**가 가장 자주 다닙니다.")
-        b_c2.button("🟢 34번 보기", key="jump_34_tip", on_click=set_tab, args=("dj34",), **STRETCH_KW)
-
     options = find_all_geumsan_options(g_origin, g_dest, now_min)
 
     if options:
         best = options[0]
-        b_cls = (
-            "badge-last"
-            if best["lb_level"] == "last"
-            else ("badge-ended" if best["lb_level"] == "ended" else ("badge-warn" if best["lb_level"] == "warn" else "badge-ok"))
-        )
+        # 선택 구간 모든 직통 노선의 실시간 차량 조회
+        all_rids: list[str] = []
+        for opt in options[:2]:
+            for rid in GEUMSAN_TAGO_ROUTES.get(opt["bus_no"], [])[:4]:
+                if rid not in all_rids:
+                    all_rids.append(rid)
 
-        if best["is_ended"]:
-            headline_time = f"내일 첫차 {best['next_board_str']}경"
-            remain_line = f"오늘 버스가 모두 끝났습니다 · 기점({best['start_terminal']}) 첫차 {best['next_dep_str']} 출발"
-        elif best["offset_to_origin"] == 0:
-            headline_time = f"{best['next_dep_str']} 출발 ({format_remain_str(best['wait_from_now'])})"
-            remain_line = f"{g_origin} 기점 정각 출발 · {g_dest}까지 약 {best['ride_min']}분 소요"
+        live_buses, api_status = fetch_live_bus_locations(34310, tuple(all_rids))
+        best_rids = tuple(GEUMSAN_TAGO_ROUTES.get(best["bus_no"], []))
+        origin_nid = GEUMSAN_HUB_GPS.get(g_origin, (0.0, 0.0, ""))[2]
+        city_for_eta = 25 if origin_nid.startswith("DJB") else 34310
+        live_eta = fetch_stop_arrival_eta(city_for_eta, origin_nid, best_rids) if origin_nid else None
+
+        if live_eta:
+            headline = f"실시간 약 {live_eta['arr_min']}분 후 도착"
+            subline = f"{live_eta['prev_cnt']}정거장 전 접근 중 · {g_dest}까지 약 {best['ride_min']}분 소요"
+            status_pill = '<span class="pill pill-live">● 실시간 도착예정</span>'
+        elif live_buses:
+            b0 = live_buses[0]
+            headline = f"약 {best['next_board_str']} 도착 ({format_remain_str(best['wait_from_now'])})"
+            subline = f"현재 '{b0['nodenm']}' 부근 운행 중 ({b0['vehicleno']}) · 이동 약 {best['ride_min']}분"
+            status_pill = f'<span class="pill pill-live">● 실시간 {len(live_buses)}대 운행중</span>'
+        elif best["is_ended"]:
+            headline = f"내일 첫차 {best['next_board_str']}경"
+            subline = f"기점({best['start_terminal']}) 첫차 {best['next_dep_str']} 출발"
+            status_pill = '<span class="pill pill-muted">오늘 운행 종료</span>'
         else:
-            headline_time = f"약 {best['next_board_str']} 도착 예정 ({format_remain_str(best['wait_from_now'])})"
-            remain_line = (
-                f"기점({best['start_terminal']}) {best['next_dep_str']} 공식 출발 "
-                f"(+{best['offset_to_origin']}분 후 통과 예상) · 이동 약 {best['ride_min']}분"
+            headline = f"약 {best['next_board_str']} 도착 ({format_remain_str(best['wait_from_now'])})"
+            subline = f"기점({best['start_terminal']}) {best['next_dep_str']} 출발 · {g_dest}까지 약 {best['ride_min']}분"
+            status_pill = (
+                '<span class="pill pill-blue">GPS 대기 · 시간표 안내</span>'
+                if api_status == "ok"
+                else '<span class="pill pill-muted">시간표 안내</span>'
             )
 
         st.markdown(
             f"""
-<div class="main-card">
-  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-    <div style="font-size:1.15rem; font-weight:900; color:#0F172A;">
-      🚌 가장 빠른 차: <span style="color:#2563EB;">{html.escape(best['name'])}</span>
-      <span style="font-size:0.9rem; font-weight:700; color:#64748B;">({html.escape(g_origin)} ➔ {html.escape(g_dest)})</span>
-    </div>
-    <span class="{b_cls}">{html.escape(best['lb_badge'])}</span>
-  </div>
-  <div class="big-time">{headline_time}</div>
-  <div style="font-size:0.95rem; font-weight:700; color:#334155; margin-top:6px;">
-    {html.escape(remain_line)}
-  </div>
-  <div class="honest-note">
-    ※ 실시간 GPS가 아닌 <b>2026. 7. 1 시행 금산군 공식 기점 시간표</b> 기준 안내입니다. 중간 정류장은 도로 사정에 따라 5분가량 차이가 날 수 있으니 조금 일찍 나와 주세요.
-  </div>
-</div>
-""",
+            <div class="hero-box">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                <span style="font-size:1.02rem;font-weight:900;color:#1D4ED8;">
+                  🚌 {html.escape(best['name'])}
+                  <span style="font-size:0.84rem;font-weight:600;color:#64748B;">({html.escape(g_origin)} → {html.escape(g_dest)})</span>
+                </span>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  {status_pill}
+                  <span class="pill pill-blue">{html.escape(best['badge'])}</span>
+                </div>
+              </div>
+              <div class="eta-big">{html.escape(headline)}</div>
+              <div class="eta-sub">{html.escape(subline)}</div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-        # 음성 안내 버튼
-        if best["is_ended"]:
-            tts_msg = (
-                f"{g_origin}에서 {g_dest} 가는 오늘 버스는 운행이 종료되었습니다. "
-                f"내일 첫차는 {best['bus_no']}번이며 기점에서 {best['next_dep_str']}에 출발합니다."
-            )
-        else:
-            tts_msg = (
-                f"{g_origin}에서 {g_dest} 가는 가장 빠른 버스는 {best['bus_no']}번입니다. "
-                f"기점인 {best['start_terminal']}에서 {best['next_dep_str']}에 출발하며, "
-                f"{g_origin} 정류장에는 약 {best['wait_from_now']}분 뒤인 {best['next_board_str']} 무렵 도착할 예정입니다. "
-                f"{best['lb_badge']}."
-            )
-        render_tts_button(tts_msg)
+        # 지도 렌더링: 승차~하차 구간 정류장 + 실시간 운행 버스 마커
+        segment_stops = best["active_stops"][best["o_pos"] : best["d_pos"] + 1]
+        map_points = []
+        for s_nm in segment_stops:
+            lat, lng = geumsan_stop_latlon(s_nm)
+            role = "origin" if s_nm == g_origin else ("dest" if s_nm == g_dest else "via")
+            map_points.append({"name": s_nm, "lat": lat, "lng": lng, "role": role})
+        render_route_map(map_points, live_buses, accent_hex="#3B82F6")
 
-        # 해당 구간을 운행하는 전체 직통 노선별 오늘 시간표 한눈에 표시
-        st.markdown(f"#### 📅 `{g_origin} ➔ {g_dest}` 운행 버스 시간표 ({len(options)}개 노선)")
+        # 노선별 간결한 시간표 카드
         for opt in options:
-            chips_html = render_time_badges(opt["all_dep_times"], opt["offset_to_origin"], now_min, accent_green=False)
-            note_offset = (
-                f"{opt['start_terminal']} 기점 출발 시각"
-                if opt["offset_to_origin"] == 0
-                else f"{opt['start_terminal']} 기점 출발 시각 (`{g_origin}`까지 평균 +{opt['offset_to_origin']}분)"
-            )
+            chips_html = render_time_chips(opt["all_dep_times"], opt["offset_to_origin"], now_min, green=False)
             st.markdown(
                 f"""
-<div class="sub-card">
-  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
-    <div>
-      <b style="font-size:1.05rem; color:#0F172A;">🚌 {html.escape(opt['name'])}</b>
-      <span style="font-size:0.86rem; color:#64748B;"> · {html.escape(opt['desc'])}</span>
-    </div>
-    <span style="font-size:0.84rem; font-weight:800; color:#1D4ED8;">{html.escape(opt['lb_badge'])}</span>
-  </div>
-  <div style="font-size:0.83rem; color:#64748B; margin-bottom:6px;">📍 {html.escape(note_offset)}</div>
-  <div>{chips_html}</div>
-</div>
-""",
+                <div class="route-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;flex-wrap:wrap;">
+                    <div>
+                      <b style="font-size:0.95rem;color:#0F172A;">{html.escape(opt['name'])}</b>
+                      <span style="font-size:0.8rem;color:#64748B;"> · {html.escape(opt['desc'])}</span>
+                    </div>
+                    <span style="font-size:0.78rem;font-weight:800;color:#2563EB;">{html.escape(opt['badge'])}</span>
+                  </div>
+                  <div>{chips_html}</div>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
-
-            with st.expander(f"🚏 {opt['bus_no']}번 경유 정류장 보기 ({len(opt['active_stops'])}곳)"):
-                stop_labels = []
-                for s_nm in opt["active_stops"]:
-                    if s_nm == g_origin:
-                        stop_labels.append(f"**🙋 {s_nm}(타는 곳)**")
-                    elif s_nm == g_dest:
-                        stop_labels.append(f"**🏁 {s_nm}(내리는 곳)**")
-                    else:
-                        stop_labels.append(s_nm)
-                st.markdown(" ➔ ".join(stop_labels))
 
     else:
         tr = find_simple_transfer(g_origin, g_dest, now_min)
         if tr:
-            st.warning(
-                f"**`{g_origin} ➔ {g_dest}`** 한 번에 가는 직통 버스가 없습니다. "
-                f"**`{tr['hub']}`**에서 갈아타시면 이동할 수 있습니다."
+            st.info(
+                f"**{g_origin} → {g_dest}** 직통 버스가 없습니다. **{tr['hub']}**에서 1회 환승으로 이동할 수 있습니다."
             )
             tc1, tc2 = st.columns(2)
             with tc1:
-                st.button(
-                    f"1구간: {g_origin} ➔ {tr['hub']} ({tr['leg1']['bus_no']}번)",
-                    key="btn_tr_1",
-                    on_click=set_geumsan_pair,
-                    args=(g_origin, tr["hub"]),
+                if st.button(
+                    f"1구간 · {g_origin} → {tr['hub']} ({tr['leg1']['bus_no']}번)",
+                    key="tr_leg1",
                     **STRETCH_KW,
-                )
+                ):
+                    st.session_state.g_origin, st.session_state.g_dest = g_origin, tr["hub"]
+                    st.rerun()
             with tc2:
-                st.button(
-                    f"2구간: {tr['hub']} ➔ {g_dest} ({tr['leg2']['bus_no']}번)",
-                    key="btn_tr_2",
-                    on_click=set_geumsan_pair,
-                    args=(tr["hub"], g_dest),
+                if st.button(
+                    f"2구간 · {tr['hub']} → {g_dest} ({tr['leg2']['bus_no']}번)",
+                    key="tr_leg2",
                     **STRETCH_KW,
-                )
+                ):
+                    st.session_state.g_origin, st.session_state.g_dest = tr["hub"], g_dest
+                    st.rerun()
         else:
-            st.warning("선택하신 구간을 연결하는 버스 노선이 없습니다.")
+            st.warning("선택하신 구간을 연결하는 노선이 없습니다.")
 
 
 # =============================================================================
-# [화면 2] 🟢 대전 외곽버스 34번 전용 안내 (서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산)
+# [탭 2] 대전 외곽버스 34번 (서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소)
 # =============================================================================
 else:
-    st.caption(f"{DAEJEON_34_META['basis_date']} 공식 시간표 · 첫차 06:00 / 막차 22:00 · 일 22회 (40~55분 간격)")
+    q_cols = st.columns(4)
+    for col, preset in zip(q_cols, QUICK_DJ34):
+        with col:
+            is_sel = (
+                st.session_state.dj_dir == preset["dir"]
+                and st.session_state.dj_origin == preset["o"]
+                and st.session_state.dj_dest == preset["d"]
+            )
+            if st.button(
+                preset["label"],
+                key=f"qdj_{preset['label']}",
+                type="primary" if is_sel else "secondary",
+                **STRETCH_KW,
+            ):
+                st.session_state.dj_dir = preset["dir"]
+                st.session_state.dj_origin = preset["o"]
+                st.session_state.dj_dest = preset["d"]
+                st.rerun()
 
-    # 자주 타는 구간 원터치 버튼 4개
-    dp1, dp2 = st.columns(2)
-    with dp1:
-        st.button(
-            QUICK_DJ34_PRESETS[0]["label"],
-            key="q_dj_0",
-            type="primary"
-            if (st.session_state.dj_dir == "to_daejeon" and st.session_state.dj_origin == "진산")
-            else "secondary",
-            on_click=set_dj34_preset,
-            args=("to_daejeon", "진산", "서남부터미널종점"),
-            **STRETCH_KW,
-        )
-    with dp2:
-        st.button(
-            QUICK_DJ34_PRESETS[1]["label"],
-            key="q_dj_1",
-            type="primary"
-            if (st.session_state.dj_dir == "to_daejeon" and st.session_state.dj_origin == "복수면사무소")
-            else "secondary",
-            on_click=set_dj34_preset,
-            args=("to_daejeon", "복수면사무소", "서남부터미널종점"),
-            **STRETCH_KW,
-        )
-
-    dp3, dp4 = st.columns(2)
-    with dp3:
-        st.button(
-            QUICK_DJ34_PRESETS[2]["label"],
-            key="q_dj_2",
-            type="primary"
-            if (st.session_state.dj_dir == "to_daedun" and st.session_state.dj_dest == "복수면사무소")
-            else "secondary",
-            on_click=set_dj34_preset,
-            args=("to_daedun", "대전서남부터미널", "복수면사무소"),
-            **STRETCH_KW,
-        )
-    with dp4:
-        st.button(
-            QUICK_DJ34_PRESETS[3]["label"],
-            key="q_dj_3",
-            type="primary"
-            if (st.session_state.dj_dir == "to_daedun" and st.session_state.dj_dest == "진산")
-            else "secondary",
-            on_click=set_dj34_preset,
-            args=("to_daedun", "대전서남부터미널", "진산"),
-            **STRETCH_KW,
-        )
-
-    # 방향 선택 큰 버튼 2개
-    dir_b1, dir_b2 = st.columns(2)
-    with dir_b1:
-        st.button(
-            "⬆️ 대전(서남부터미널) 가는 길",
-            key="dj_dir_up",
+    dir_c1, dir_c2 = st.columns(2)
+    with dir_c1:
+        if st.button(
+            "⬆️ 대전 서남부터미널 방면",
+            key="dj_up",
             type="primary" if st.session_state.dj_dir == "to_daejeon" else "secondary",
-            on_click=set_dj34_dir,
-            args=("to_daejeon",),
             **STRETCH_KW,
-        )
-    with dir_b2:
-        st.button(
-            "⬇️ 복수 · 진산 · 대둔산 오는 길",
-            key="dj_dir_down",
+        ):
+            st.session_state.dj_dir = "to_daejeon"
+            st.session_state.dj_origin = "진산"
+            st.session_state.dj_dest = "서남부터미널종점"
+            st.rerun()
+    with dir_c2:
+        if st.button(
+            "⬇️ 복수 · 진산 · 대둔산 방면",
+            key="dj_down",
             type="primary" if st.session_state.dj_dir == "to_daedun" else "secondary",
-            on_click=set_dj34_dir,
-            args=("to_daedun",),
             **STRETCH_KW,
-        )
+        ):
+            st.session_state.dj_dir = "to_daedun"
+            st.session_state.dj_origin = "대전서남부터미널"
+            st.session_state.dj_dest = "진산"
+            st.rerun()
 
-    cur_stops_34 = (
+    cur_stops = (
         DAEJEON_34_STOPS_TO_DAEDUN
         if st.session_state.dj_dir == "to_daedun"
         else DAEJEON_34_STOPS_TO_DAEJEON
     )
-    names_34 = [s["name"] for s in cur_stops_34]
-    map_34 = {s["name"]: s for s in cur_stops_34}
+    names_34 = [s["name"] for s in cur_stops]
+    stop_map_34 = {s["name"]: s for s in cur_stops}
 
     sc1, sc2 = st.columns(2)
     with sc1:
         b_opts = names_34[:-1]
         o_i = b_opts.index(st.session_state.dj_origin) if st.session_state.dj_origin in b_opts else 0
         sel_o = st.selectbox(
-            "타는 정류장",
+            "출발 정류장",
             options=b_opts,
             index=o_i,
-            key=f"dj_o_{st.session_state.dj_dir}_{st.session_state.dj_origin}",
-            format_func=lambda nm: f"{'⭐ ' if map_34[nm]['hub'] else ''}{nm} ({map_34[nm]['zone']})",
+            format_func=lambda nm: f"{'⭐ ' if stop_map_34[nm]['hub'] else ''}{nm}",
         )
         if sel_o != st.session_state.dj_origin:
             st.session_state.dj_origin = sel_o
             st.rerun()
 
     with sc2:
-        after_i = names_34.index(st.session_state.dj_origin) + 1
-        a_opts = names_34[after_i:]
+        after_idx = names_34.index(st.session_state.dj_origin) + 1
+        a_opts = names_34[after_idx:]
         d_i = a_opts.index(st.session_state.dj_dest) if st.session_state.dj_dest in a_opts else len(a_opts) - 1
         sel_d = st.selectbox(
-            "내리는 정류장",
+            "도착 정류장",
             options=a_opts,
             index=d_i,
-            key=f"dj_d_{st.session_state.dj_dir}_{st.session_state.dj_dest}",
-            format_func=lambda nm: f"{'🏁 ' if map_34[nm]['hub'] else ''}{nm} ({map_34[nm]['zone']})",
+            format_func=lambda nm: f"{'🏁 ' if stop_map_34[nm]['hub'] else ''}{nm}",
         )
         if sel_d != st.session_state.dj_dest:
             st.session_state.dj_dest = sel_d
             st.rerun()
 
-    dj_res = evaluate_daejeon_34(
+    dj = evaluate_daejeon_34(
         st.session_state.dj_dir,
         st.session_state.dj_origin,
         st.session_state.dj_dest,
         now_min,
     )
 
-    b34_cls = (
-        "badge-last"
-        if dj_res["lb_level"] == "last"
-        else ("badge-ended" if dj_res["lb_level"] == "ended" else ("badge-warn" if dj_res["lb_level"] == "warn" else "badge-ok"))
+    # 대전 34번 TAGO 실시간 위치 조회 (cityCode=25, routeId=DJB30300016)
+    all_dj_buses, dj_api_status = fetch_live_bus_locations(25, ("DJB30300016",))
+
+    # 선택한 진행 방향(상행 46~88번 / 하행 1~46번)에 해당하는 차량 우선 필터링
+    if st.session_state.dj_dir == "to_daedun":
+        dir_buses = [b for b in all_dj_buses if b["nodeord"] == 0 or b["nodeord"] <= 46]
+    else:
+        dir_buses = [b for b in all_dj_buses if b["nodeord"] >= 46]
+    shown_buses = dir_buses if dir_buses else all_dj_buses
+
+    origin_nodeid_34 = dj["origin_item"].get("nodeid", "")
+    dj_live_eta = (
+        fetch_stop_arrival_eta(25, origin_nodeid_34, ("DJB30300016",))
+        if origin_nodeid_34
+        else None
     )
 
-    if dj_res["is_ended"]:
-        head_34 = f"내일 첫차 {dj_res['next_board_str']}경"
-        sub_34 = f"오늘 34번 운행이 끝났습니다 · 기점({dj_res['start_terminal']}) 첫차 06:00 출발"
-    elif dj_res["offset_o"] == 0:
-        head_34 = f"{dj_res['next_dep_str']} 출발 ({format_remain_str(dj_res['wait_from_now'])})"
-        sub_34 = f"{dj_res['start_terminal']} 정각 출발 · {st.session_state.dj_dest}까지 약 {dj_res['ride_min']}분 소요"
+    # 내 정류장 기준 접근 중인 차량과의 남은 정거장 계산
+    origin_seq = dj["origin_item"].get("seq", 0)
+    approaching_note = ""
+    if dir_buses and origin_seq:
+        ahead = [origin_seq - b["nodeord"] for b in dir_buses if 0 < b["nodeord"] <= origin_seq]
+        if ahead:
+            min_stops = min(ahead)
+            approaching_note = "곧 정류장 진입" if min_stops == 0 else f"약 {min_stops}정거장 전 운행 중"
+
+    if dj_live_eta:
+        head_34 = f"실시간 약 {dj_live_eta['arr_min']}분 후 도착"
+        sub_34 = f"{dj_live_eta['prev_cnt']}정거장 전 접근 중 · 정류장번호 {dj['origin_item']['id']} · 이동 약 {dj['ride_min']}분"
+        pill_34 = '<span class="pill pill-live">● 실시간 도착예정</span>'
+    elif shown_buses:
+        near_b = shown_buses[0]
+        head_34 = f"약 {dj['next_board_str']} 도착 ({format_remain_str(dj['wait_from_now'])})"
+        loc_desc = approaching_note if approaching_note else f"현재 '{near_b['nodenm']}' 부근"
+        sub_34 = f"34번 {loc_desc} ({near_b['vehicleno']}) · 정류장번호 {dj['origin_item']['id']} · 이동 약 {dj['ride_min']}분"
+        pill_34 = f'<span class="pill pill-live">● 실시간 {len(shown_buses)}대 운행중</span>'
+    elif dj["is_ended"]:
+        head_34 = f"내일 첫차 {dj['next_board_str']}경"
+        sub_34 = f"기점({dj['start_terminal']}) 첫차 06:00 출발"
+        pill_34 = '<span class="pill pill-muted">오늘 운행 종료</span>'
     else:
-        head_34 = f"약 {dj_res['next_board_str']} 도착 예정 ({format_remain_str(dj_res['wait_from_now'])})"
-        sub_34 = (
-            f"기점({dj_res['start_terminal']}) {dj_res['next_dep_str']} 공식 출발 "
-            f"(+{dj_res['offset_o']}분 후 통과 예상) · 이동 약 {dj_res['ride_min']}분"
+        head_34 = f"약 {dj['next_board_str']} 도착 ({format_remain_str(dj['wait_from_now'])})"
+        sub_34 = f"기점({dj['start_terminal']}) {dj['next_dep_str']} 출발 · 정류장번호 {dj['origin_item']['id']} · 이동 약 {dj['ride_min']}분"
+        pill_34 = (
+            '<span class="pill pill-green">GPS 대기 · 시간표 안내</span>'
+            if dj_api_status == "ok"
+            else '<span class="pill pill-muted">시간표 안내</span>'
         )
 
     st.markdown(
         f"""
-<div class="main-card-green">
-  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-    <div style="font-size:1.15rem; font-weight:900; color:#14532D;">
-      🟢 대전 34번 다음 버스
-      <span style="font-size:0.9rem; font-weight:700; color:#475569;">({html.escape(st.session_state.dj_origin)} ➔ {html.escape(st.session_state.dj_dest)})</span>
-    </div>
-    <span class="{b34_cls}">{html.escape(dj_res['lb_badge'])}</span>
-  </div>
-  <div class="big-time-green">{head_34}</div>
-  <div style="font-size:0.95rem; font-weight:700; color:#334155; margin-top:6px;">
-    {html.escape(sub_34)}
-  </div>
-  <div class="honest-note">
-    ※ 실시간 GPS가 아닌 <b>대전 34번 공식 기점 시간표({DAEJEON_34_META['basis_date']})</b> 기준 추정 시각입니다. 정류장 번호 <b>{dj_res['origin_item']['id']}</b>에서 조금 여유 있게 대기해 주세요.
-  </div>
-</div>
-""",
+        <div class="hero-box green">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+            <span style="font-size:1.02rem;font-weight:900;color:#047857;">
+              🟢 대전 34번
+              <span style="font-size:0.84rem;font-weight:600;color:#64748B;">({html.escape(st.session_state.dj_origin)} → {html.escape(st.session_state.dj_dest)})</span>
+            </span>
+            <div style="display:flex;gap:6px;align-items:center;">
+              {pill_34}
+              <span class="pill pill-green">{html.escape(dj['badge'])}</span>
+            </div>
+          </div>
+          <div class="eta-big">{html.escape(head_34)}</div>
+          <div class="eta-sub">{html.escape(sub_34)}</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    tts_34 = (
-        f"대전 34번 버스 안내입니다. {dj_res['start_terminal']}에서 {dj_res['next_dep_str']}에 출발하는 차량이 "
-        f"{st.session_state.dj_origin} 정류장에 약 {dj_res['wait_from_now']}분 뒤인 {dj_res['next_board_str']} 무렵 도착할 예정입니다. "
-        f"{st.session_state.dj_dest}까지는 약 {dj_res['ride_min']}분 걸립니다. {dj_res['lb_badge']}."
-    )
-    render_tts_button(tts_34)
+    # 대전 34번 실제 지도 (실측 정류장 GPS 경로 + 실시간 버스 마커)
+    dj_map_pts = []
+    for idx_s in range(dj["idx_o"], dj["idx_d"] + 1):
+        st_item = dj["stops"][idx_s]
+        role = "origin" if idx_s == dj["idx_o"] else ("dest" if idx_s == dj["idx_d"] else "via")
+        dj_map_pts.append(
+            {
+                "name": st_item["name"],
+                "lat": st_item["lat"],
+                "lng": st_item["lng"],
+                "role": role,
+            }
+        )
+    render_route_map(dj_map_pts, shown_buses, accent_hex="#10B981")
 
-    # 양방향 공식 시간표 한 장에 깔끔하게 표시
-    chips_to_dd = render_time_badges(
-        [r["seonambu"] for r in DAEJEON_34_TIMETABLE],
-        dj_res["offset_o"] if st.session_state.dj_dir == "to_daedun" else 0,
-        now_min,
-        accent_green=True,
-    )
-    chips_to_dj = render_time_badges(
-        [r["daedunsan"] for r in DAEJEON_34_TIMETABLE],
-        dj_res["offset_o"] if st.session_state.dj_dir == "to_daejeon" else 0,
-        now_min,
-        accent_green=True,
-    )
-
+    # 선택한 방향 시간표 카드
+    chips_34 = render_time_chips(dj["dep_times"], dj["offset_o"], now_min, green=True)
     st.markdown(
         f"""
-<div class="sub-card" style="margin-top:10px;">
-  <div style="font-size:1.05rem; font-weight:900; color:#14532D; margin-bottom:10px;">
-    📅 대전 34번 오늘 전체 시간표 (일 22회 · 기점 출발 시각)
-  </div>
-  <div style="margin-bottom:12px;">
-    <div style="font-size:0.9rem; font-weight:800; color:#166534; margin-bottom:4px;">
-      ⬆️ 대둔산휴게소 출발 (진산 · 복수 ➔ 대전 서남부터미널 방면)
-    </div>
-    <div>{chips_to_dj}</div>
-  </div>
-  <div>
-    <div style="font-size:0.9rem; font-weight:800; color:#166534; margin-bottom:4px;">
-      ⬇️ 대전 서남부터미널 출발 (복수 · 진산 ➔ 대둔산휴게소 방면)
-    </div>
-    <div>{chips_to_dd}</div>
-  </div>
-</div>
-""",
+        <div class="route-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+            <b style="font-size:0.94rem;color:#0F172A;">🕒 {html.escape(dj['start_terminal'])} 출발 시간표 (일 22회)</b>
+            <span style="font-size:0.78rem;color:#64748B;">첫차 06:00 · 막차 22:00</span>
+          </div>
+          <div>{chips_34}</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-
-    # 전체 정류장 목록은 필요할 때만 펼쳐보기
-    with st.expander(f"🚏 34번 전체 경유 정류장 · 정류장번호 보기 ({len(dj_res['stops'])}곳)"):
-        rows_34 = []
-        for idx_s, s_obj in enumerate(dj_res["stops"], start=1):
-            mark = ""
-            if s_obj["name"] == st.session_state.dj_origin:
-                mark = "🙋 타는 곳"
-            elif s_obj["name"] == st.session_state.dj_dest:
-                mark = "🏁 내리는 곳"
-            rows_34.append(
-                {
-                    "순서": idx_s,
-                    "정류장명": s_obj["name"],
-                    "정류장번호": s_obj["id"],
-                    "지역": s_obj["zone"],
-                    "기점 대비": f"+{s_obj['min']}분",
-                    "표시": mark,
-                }
-            )
-        st.dataframe(pd.DataFrame(rows_34), hide_index=True, **STRETCH_KW)
