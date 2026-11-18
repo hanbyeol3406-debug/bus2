@@ -38,6 +38,34 @@ def _supports_width_stretch() -> bool:
 
 STRETCH_KW = {"width": "stretch"} if _supports_width_stretch() else {"use_container_width": True}
 
+
+def render_html(raw_html: str) -> None:
+    """들여쓰기·빈 줄로 인해 Streamlit Markdown이 HTML을 코드블록(<pre><code>)으로 오인하는 현상 원천 차단"""
+    s = raw_html.strip()
+    if s.startswith("<style"):
+        st.markdown(s, unsafe_allow_html=True)
+        return
+    compact = " ".join(line.strip() for line in s.splitlines() if line.strip())
+    st.markdown(compact, unsafe_allow_html=True)
+
+
+def safe_columns(spec, vertical_alignment: str | None = None):
+    """Streamlit 버전에 관계없이 수직 정렬(vertical_alignment) 안전 지원"""
+    if vertical_alignment:
+        try:
+            return st.columns(spec, vertical_alignment=vertical_alignment)
+        except TypeError:
+            return st.columns(spec)
+    return st.columns(spec)
+
+
+def embed_iframe(html_doc: str, height: int) -> None:
+    """스크롤바 없이 깔끔하게 고정 높이 HTML/JS 위젯 렌더링"""
+    if hasattr(st, "iframe"):
+        st.iframe(html_doc, height=height)
+    else:
+        components.html(html_doc, height=height, scrolling=False)
+
 # =============================================================================
 # 1. 정류장 · 노선 · 공식 시간표 데이터
 # =============================================================================
@@ -1701,19 +1729,19 @@ def render_route_map(
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   * {{ box-sizing: border-box; font-family: 'Pretendard', -apple-system, 'Malgun Gothic', sans-serif; }}
-  html, body {{ margin: 0; padding: 0; background: transparent; }}
+  html, body {{ margin: 0; padding: 0; overflow: hidden; background: transparent; }}
   .map-wrap {{
     position: relative;
     width: 100%;
-    height: 300px;
+    height: 292px;
     border-radius: 20px;
     overflow: hidden;
     border: 1.5px solid #E2E8F0;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
     background: #F8FAFC;
   }}
   #map {{ width: 100%; height: 100%; }}
@@ -1787,81 +1815,82 @@ def render_route_map(
   if (buses.length > 0) {{
     legend.innerHTML = '🔴 실시간 버스 ' + buses.length + '대 위치 표시중';
   }} else {{
-    legend.innerHTML = '🗺️ 선택 구간 노선 지도 (현재 운행중 차량 없음)';
+    legend.innerHTML = '🗺️ 선택 구간 노선 지도 (운행 대기중)';
   }}
 
-  const map = L.map('map', {{ zoomControl: true, attributionControl: false }});
-  L.tileLayer('https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png', {{
-    maxZoom: 18
-  }}).addTo(map);
-
-  const bounds = [];
-  const lineCoords = pts.map(p => [p.lat, p.lng]);
-
-  if (lineCoords.length > 1) {{
-    L.polyline(lineCoords, {{
-      color: '{accent_hex}',
-      weight: 5,
-      opacity: 0.82,
-      lineCap: 'round',
-      lineJoin: 'round'
+  if (typeof L !== 'undefined') {{
+    const map = L.map('map', {{ zoomControl: true, attributionControl: false }});
+    L.tileLayer('https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}{{r}}.png', {{
+      maxZoom: 18
     }}).addTo(map);
-  }}
 
-  pts.forEach((p) => {{
-    bounds.push([p.lat, p.lng]);
-    if (p.role === 'origin' || p.role === 'dest') {{
-      const cls = p.role === 'dest' ? 'pin-chip dest' : 'pin-chip';
-      const label = p.role === 'origin' ? '출발 · ' + p.name : '도착 · ' + p.name;
-      L.circleMarker([p.lat, p.lng], {{
-        radius: 6,
-        fillColor: p.role === 'dest' ? '{accent_hex}' : '#FFFFFF',
+    const bounds = [];
+    const lineCoords = pts.map(p => [p.lat, p.lng]);
+
+    if (lineCoords.length > 1) {{
+      L.polyline(lineCoords, {{
         color: '{accent_hex}',
-        weight: 3,
-        fillOpacity: 1
+        weight: 5,
+        opacity: 0.84,
+        lineCap: 'round',
+        lineJoin: 'round'
       }}).addTo(map);
-      const icon = L.divIcon({{
+    }}
+
+    pts.forEach((p) => {{
+      bounds.push([p.lat, p.lng]);
+      if (p.role === 'origin' || p.role === 'dest') {{
+        const cls = p.role === 'dest' ? 'pin-chip dest' : 'pin-chip';
+        const label = p.role === 'origin' ? '출발 · ' + p.name : '도착 · ' + p.name;
+        L.circleMarker([p.lat, p.lng], {{
+          radius: 6,
+          fillColor: p.role === 'dest' ? '{accent_hex}' : '#FFFFFF',
+          color: '{accent_hex}',
+          weight: 3,
+          fillOpacity: 1
+        }}).addTo(map);
+        const icon = L.divIcon({{
+          className: '',
+          html: '<div class="' + cls + '">' + label + '</div>',
+          iconSize: [0, 0]
+        }});
+        L.marker([p.lat, p.lng], {{ icon, zIndexOffset: 500 }}).addTo(map);
+      }} else {{
+        L.circleMarker([p.lat, p.lng], {{
+          radius: 4,
+          fillColor: '#FFFFFF',
+          color: '{accent_hex}',
+          weight: 2,
+          fillOpacity: 1
+        }}).bindTooltip(p.name, {{ direction: 'top', offset: [0, -4] }}).addTo(map);
+      }}
+    }});
+
+    buses.forEach((b) => {{
+      bounds.push([b.lat, b.lng]);
+      const bIcon = L.divIcon({{
         className: '',
-        html: '<div class="' + cls + '">' + label + '</div>',
+        html: '<div class="bus-chip">🚌 ' + b.nodenm + '</div>',
         iconSize: [0, 0]
       }});
-      L.marker([p.lat, p.lng], {{ icon, zIndexOffset: 500 }}).addTo(map);
-    }} else {{
-      L.circleMarker([p.lat, p.lng], {{
-        radius: 4,
-        fillColor: '#FFFFFF',
-        color: '{accent_hex}',
-        weight: 2,
-        fillOpacity: 1
-      }}).bindTooltip(p.name, {{ direction: 'top', offset: [0, -4] }}).addTo(map);
-    }}
-  }});
-
-  buses.forEach((b) => {{
-    bounds.push([b.lat, b.lng]);
-    const bIcon = L.divIcon({{
-      className: '',
-      html: '<div class="bus-chip">🚌 ' + b.nodenm + '</div>',
-      iconSize: [0, 0]
+      L.marker([b.lat, b.lng], {{ icon: bIcon, zIndexOffset: 1000 }})
+        .bindPopup('<b>🚌 실시간 운행 차량</b><br/>최근 정류장: ' + b.nodenm + '<br/>차량번호: ' + b.vehicleno)
+        .addTo(map);
     }});
-    L.marker([b.lat, b.lng], {{ icon: bIcon, zIndexOffset: 1000 }})
-      .bindPopup('<b>🚌 실시간 운행 차량</b><br/>최근 정류장: ' + b.nodenm + '<br/>차량번호: ' + b.vehicleno)
-      .addTo(map);
-  }});
 
-  if (bounds.length === 1) {{
-    map.setView(bounds[0], 13);
-  }} else if (bounds.length > 1) {{
-    map.fitBounds(bounds, {{ padding: [38, 38] }});
+    if (bounds.length === 1) {{
+      map.setView(bounds[0], 13);
+    }} else if (bounds.length > 1) {{
+      map.fitBounds(bounds, {{ padding: [38, 38] }});
+    }}
+  }} else {{
+    document.getElementById('map').innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#64748B;font-size:13px;font-weight:700;">지도를 불러오는 중입니다...</div>';
   }}
 </script>
 </body>
 </html>"""
 
-    if hasattr(st, "iframe"):
-        st.iframe(map_html, height=308)
-    else:
-        components.html(map_html, height=308, scrolling=False)
+    embed_iframe(map_html, height=298)
 
 
 # =============================================================================
@@ -2079,10 +2108,10 @@ def render_time_chips(dep_times: list[str], offset_min: int, now_min: int, green
 
 
 # =============================================================================
-# 4-B. 금산 붕붕이 전용 차별화 기능 3종 (카카오맵에 없는 시골버스 맞춤 도우미)
-#   ① 🏡 돌아오는 막차 안전 계산기 (왕복 귀가 막차 시간 & 여유시간 자동 점검)
-#   ③ 💌 가족·어르신께 카톡/문자 한 줄 복사 버튼
-#   ④ 🚕 버스 대기가 길거나 끊겼을 때 택시 예상 요금 · 소요시간 · 콜택시 바로연결
+# 4-B. 금산 붕붕이 전용 차별화 도우미 3종
+#   ① 🏡 돌아올 막차 안전 계산기 (귀가 막차 시각 & 남은 여유 자동 점검)
+#   ③ 💌 가족·어르신 카톡/문자 한 줄 안내 복사 버튼
+#   ④ 🚕 버스 대기 길거나 종료 시 택시 예상 요금 · 소요시간 · 콜택시 바로 전화
 # =============================================================================
 
 def calc_geumsan_return_last(origin: str, dest: str, now_min: int) -> dict:
@@ -2092,7 +2121,6 @@ def calc_geumsan_return_last(origin: str, dest: str, now_min: int) -> dict:
         stops = info["stops"]
         if origin not in stops or dest not in stops or origin == dest:
             continue
-        # 귀가 방향: dest -> origin
         forward = stops.index(dest) < stops.index(origin)
         act = stops if forward else list(reversed(stops))
         raw = info["out_times"] if forward else (info["in_times"] or info["out_times"])
@@ -2151,11 +2179,72 @@ def estimate_taxi_info(lat1: float, lng1: float, lat2: float, lng2: float) -> di
     straight_km = math.hypot(d_lat, d_lng)
     road_km = max(1.6, round(straight_km * 1.32, 1))
     taxi_min = max(4, int(round(road_km / 0.72)))
-    # 충남 농어촌 택시 기본요금(1.8km 4,500원) + 거리요금 근사치 (시계외 장거리 소폭 가산)
     extra_km = max(0.0, road_km - 1.8)
     raw_fare = 4500 + extra_km * (1150 if road_km <= 15 else 1300)
     fare = int(round(raw_fare / 500.0) * 500)
     return {"km": road_km, "min": taxi_min, "fare": fare}
+
+
+def render_copy_button_iframe(share_text: str, green_theme: bool = False) -> None:
+    """클립보드 복사용 깔끔한 단일 버튼 위젯 (높이 고정·스크롤바 없음)"""
+    accent = "#047857" if green_theme else "#1D4ED8"
+    soft_bg = "#ECFDF5" if green_theme else "#EFF6FF"
+    soft_bd = "#A7F3D0" if green_theme else "#BFDBFE"
+    safe_share = json.dumps(share_text, ensure_ascii=False)
+
+    btn_html = f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"/>
+<style>
+  * {{ box-sizing: border-box; font-family: 'Pretendard', -apple-system, 'Malgun Gothic', sans-serif; }}
+  html, body {{ margin: 0; padding: 0; overflow: hidden; background: transparent; }}
+  .copy-btn {{
+    width: 100%;
+    height: 46px;
+    border: 1.5px solid {soft_bd};
+    background: {soft_bg};
+    color: {accent};
+    border-radius: 15px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: filter 0.15s ease;
+  }}
+  .copy-btn:hover {{ filter: brightness(0.97); }}
+</style></head>
+<body>
+  <button class="copy-btn" id="copyBtn" onclick="copyGuide()">💌 안내 복사</button>
+<script>
+  const msg = {safe_share};
+  function showDone() {{
+    const btn = document.getElementById('copyBtn');
+    btn.innerText = '✅ 복사 완료!';
+    setTimeout(() => {{ btn.innerText = '💌 안내 복사'; }}, 1800);
+  }}
+  function fallbackCopy() {{
+    const ta = document.createElement('textarea');
+    ta.value = msg;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showDone();
+  }}
+  function copyGuide() {{
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(msg).then(showDone).catch(fallbackCopy);
+    }} else {{
+      fallbackCopy();
+    }}
+  }}
+</script>
+</body></html>"""
+    embed_iframe(btn_html, height=48)
 
 
 def render_smart_helper_bar(
@@ -2168,181 +2257,66 @@ def render_smart_helper_bar(
     green_theme: bool = False,
 ) -> None:
     """
-    지도 바로 위에 들어가는 깔끔한 보조 도우미 바:
-    - [항상 표시] 🏡 귀가 막차 안전 배지 + 💌 카톡/문자 한 줄 복사 버튼
-    - [대기 30분↑ 또는 막차 종료 시 자동 표시, 평소엔 접기 토글] 🚕 택시비 비교 & 금산 콜택시 연결
+    본문 DOM에 직접 렌더링되어 잘림(clipping)이나 스크롤바가 전혀 생기지 않는 스마트 도우미 바:
+    - 상단 줄: [🏡 돌아올 막차 배지 카드] + [💌 안내 복사 버튼]
+    - 하단 줄: [🚕 택시비 비교 & 금산 콜택시 전화하기] (대기 30분↑ 또는 운행 종료 시 자동 펼침)
     """
-    accent = "#059669" if green_theme else "#2563EB"
-    soft_bg = "#F0FDF4" if green_theme else "#EFF6FF"
-    soft_bd = "#BBF7D0" if green_theme else "#DBEAFE"
+    accent = "#047857" if green_theme else "#1D4ED8"
+    soft_bg = "#ECFDF5" if green_theme else "#EFF6FF"
 
     if not return_info.get("exists"):
         ret_title = f"🏡 돌아올 때 ({return_route_label})"
         ret_val = "직통 귀가 노선 없음 · 거점 환승 확인"
-        ret_pill_bg, ret_pill_fg = "#F1F5F9", "#64748B"
+        ret_bg, ret_fg = "#F1F5F9", "#64748B"
     elif return_info["ended"]:
         ret_title = f"🏡 돌아올 막차 ({return_route_label})"
         ret_val = f"오늘 끊김 ({return_info['board_str']} 종료)"
-        ret_pill_bg, ret_pill_fg = "#FEF2F2", "#DC2626"
+        ret_bg, ret_fg = "#FEF2F2", "#DC2626"
     else:
         rem = return_info["remain_min"]
         rem_txt = f"{rem // 60}시간 {rem % 60}분 여유" if rem >= 60 else f"{rem}분 남음!"
         ret_title = f"🏡 돌아올 막차 ({return_route_label})"
         ret_val = f"{return_info['board_str']} ({return_info['bus_no']} · {rem_txt})"
         if rem <= 90:
-            ret_pill_bg, ret_pill_fg = "#FFFBEB", "#B45309"
+            ret_bg, ret_fg = "#FFFBEB", "#B45309"
         else:
-            ret_pill_bg, ret_pill_fg = soft_bg, accent
+            ret_bg, ret_fg = soft_bg, accent
 
-    show_taxi_prominent = is_ended or wait_min >= 30
+    h_col1, h_col2 = safe_columns([3.3, 1.35], vertical_alignment="center")
+    with h_col1:
+        render_html(
+            f"""
+            <div class="ret-bar-card">
+              <span class="ret-bar-lbl">{html.escape(ret_title)}</span>
+              <span class="ret-bar-pill" style="background:{ret_bg};color:{ret_fg};">{html.escape(ret_val)}</span>
+            </div>
+            """
+        )
+    with h_col2:
+        render_copy_button_iframe(share_text, green_theme=green_theme)
+
+    show_taxi_open = "open" if (is_ended or wait_min >= 30) else ""
     fare_str = f"{taxi_info['fare']:,}원"
-    wait_reason = "오늘 버스가 끝났어요" if is_ended else f"다음 차까지 {wait_min}분 남았어요"
-    safe_share = json.dumps(share_text, ensure_ascii=False)
+    wait_reason = "오늘 버스가 끝났어요" if is_ended else f"다음 차까지 {wait_min}분 대기"
 
-    taxi_open_attr = "open" if show_taxi_prominent else ""
-    base_height = 148 if show_taxi_prominent else 96
-
-    helper_html = f"""<!DOCTYPE html>
-<html lang="ko"><head><meta charset="utf-8"/>
-<style>
-  * {{ box-sizing: border-box; font-family: 'Pretendard', -apple-system, 'Malgun Gothic', sans-serif; }}
-  html, body {{ margin: 0; padding: 0; background: transparent; }}
-  .wrap {{ display: flex; flex-direction: column; gap: 7px; }}
-  .row-top {{
-    display: flex; align-items: stretch; gap: 7px;
-  }}
-  .ret-card {{
-    flex: 1;
-    display: flex; flex-direction: column; justify-content: center;
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 15px;
-    padding: 8px 12px;
-    min-width: 0;
-  }}
-  .ret-lbl {{ font-size: 11px; font-weight: 700; color: #64748B; margin-bottom: 2px; }}
-  .ret-val {{
-    display: inline-block;
-    font-size: 12.5px; font-weight: 800;
-    color: {ret_pill_fg};
-    background: {ret_pill_bg};
-    padding: 2px 8px; border-radius: 999px;
-    width: fit-content; max-width: 100%;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }}
-  .copy-btn {{
-    border: 1.5px solid {soft_bd};
-    background: {soft_bg};
-    color: {accent};
-    border-radius: 15px;
-    padding: 0 13px;
-    font-size: 12.5px;
-    font-weight: 800;
-    cursor: pointer;
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    transition: all 0.15s ease;
-  }}
-  .copy-btn:hover {{ filter: brightness(0.97); }}
-  details.taxi-box {{
-    background: #FFFFFF;
-    border: 1px solid #FDE68A;
-    border-radius: 15px;
-    padding: 7px 12px;
-  }}
-  details.taxi-box summary {{
-    list-style: none;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 12px;
-    font-weight: 800;
-    color: #92400E;
-  }}
-  details.taxi-box summary::-webkit-details-marker {{ display: none; }}
-  .taxi-body {{
-    margin-top: 7px;
-    padding-top: 7px;
-    border-top: 1px dashed #FDE68A;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    font-size: 12px;
-    color: #475569;
-  }}
-  .call-links {{ display: inline-flex; gap: 5px; flex-wrap: wrap; }}
-  .call-chip {{
-    text-decoration: none;
-    background: #FEF3C7;
-    color: #92400E;
-    border: 1px solid #FCD34D;
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-size: 11.5px;
-    font-weight: 800;
-  }}
-</style></head>
-<body>
-<div class="wrap">
-  <div class="row-top">
-    <div class="ret-card">
-      <span class="ret-lbl">{html.escape(ret_title)}</span>
-      <span class="ret-val">{html.escape(ret_val)}</span>
-    </div>
-    <button class="copy-btn" id="copyBtn" onclick="copyGuide()">💌 안내 복사</button>
-  </div>
-  <details class="taxi-box" {taxi_open_attr}>
-    <summary>
-      <span>🚕 택시 타면 약 {fare_str} · {taxi_info['min']}분 ({taxi_info['km']}km)</span>
-      <span style="font-size:11px;color:#B45309;">{html.escape(wait_reason)} ▾</span>
-    </summary>
-    <div class="taxi-body">
-      <span>금산 콜택시 바로 전화</span>
-      <div class="call-links">
-        <a class="call-chip" href="tel:041-753-1000">📞 개인택시 753-1000</a>
-        <a class="call-chip" href="tel:041-752-2000">📞 금산운수 752-2000</a>
-        <a class="call-chip" href="tel:041-751-1234">📞 우리택시 751-1234</a>
-      </div>
-    </div>
-  </details>
-</div>
-<script>
-  const msg = {safe_share};
-  function copyGuide() {{
-    const btn = document.getElementById('copyBtn');
-    const done = () => {{
-      btn.innerText = '✅ 복사 완료!';
-      setTimeout(() => {{ btn.innerText = '💌 안내 복사'; }}, 1800);
-    }};
-    if (navigator.clipboard && navigator.clipboard.writeText) {{
-      navigator.clipboard.writeText(msg).then(done).catch(() => fallbackCopy());
-    }} else {{
-      fallbackCopy();
-    }}
-  }}
-  function fallbackCopy() {{
-    const ta = document.createElement('textarea');
-    ta.value = msg;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    const btn = document.getElementById('copyBtn');
-    btn.innerText = '✅ 복사 완료!';
-    setTimeout(() => {{ btn.innerText = '💌 안내 복사'; }}, 1800);
-  }}
-</script>
-</body></html>"""
-
-    if hasattr(st, "iframe"):
-        st.iframe(helper_html, height=base_height)
-    else:
-        components.html(helper_html, height=base_height, scrolling=False)
+    render_html(
+        f"""
+        <details class="taxi-details" {show_taxi_open}>
+          <summary>
+            <span>🚕 택시 타면 약 {fare_str} · {taxi_info['min']}분 ({taxi_info['km']}km)</span>
+            <span class="taxi-hint">{html.escape(wait_reason)} ▾</span>
+          </summary>
+          <div class="taxi-body-row">
+            <span style="font-weight:700;color:#64748B;">금산 콜택시 바로 전화</span>
+            <div class="taxi-call-group">
+              <a class="taxi-call-chip" href="tel:041-753-1000">📞 개인택시 753-1000</a>
+              <a class="taxi-call-chip" href="tel:041-752-2000">📞 금산운수 752-2000</a>
+              <a class="taxi-call-chip" href="tel:041-751-1234">📞 우리택시 751-1234</a>
+            </div>
+          </div>
+        </details>
+        """
+    )
 
 
 # =============================================================================
@@ -2362,7 +2336,7 @@ for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-st.markdown(
+render_html(
     """
 <style>
   [data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none !important; }
@@ -2373,12 +2347,12 @@ st.markdown(
   }
   .block-container {
       max-width: 660px !important;
-      padding-top: 1.15rem !important;
+      padding-top: 1.1rem !important;
       padding-bottom: 2.8rem !important;
   }
   div.stButton > button {
-      min-height: 44px !important;
-      border-radius: 14px !important;
+      min-height: 45px !important;
+      border-radius: 15px !important;
       font-weight: 700 !important;
       font-size: 0.9rem !important;
       transition: all 0.14s ease !important;
@@ -2410,16 +2384,24 @@ st.markdown(
       display: flex;
       justify-content: space-between;
       align-items: center;
+      min-height: 46px;
       background: linear-gradient(135deg, #FFFFFF 0%, #F0F7FF 100%);
       border: 1.5px solid #DBEAFE;
-      border-radius: 20px;
-      padding: 11px 16px;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.06);
+      border-radius: 18px;
+      padding: 8px 14px;
+      margin: 0;
+      box-shadow: 0 3px 10px rgba(59, 130, 246, 0.06);
   }
   .brand-row {
       display: inline-flex;
       align-items: center;
       gap: 9px;
+  }
+  .brand-text-group {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      flex-wrap: wrap;
   }
   .header-title {
       font-size: 1.08rem;
@@ -2428,19 +2410,18 @@ st.markdown(
       color: #0F172A;
   }
   .header-sub {
-      font-size: 0.75rem;
-      font-weight: 600;
+      font-size: 0.76rem;
+      font-weight: 700;
       color: #64748B;
-      margin-left: 2px;
   }
   @keyframes splashFadeOut {
-      0% { opacity: 1; visibility: visible; }
-      74% { opacity: 1; visibility: visible; transform: scale(1); }
-      100% { opacity: 0; visibility: hidden; transform: scale(1.03); pointer-events: none; }
+      0% { opacity: 1; visibility: visible; pointer-events: auto; }
+      65% { opacity: 1; visibility: visible; pointer-events: none; }
+      100% { opacity: 0; visibility: hidden; pointer-events: none; }
   }
   @keyframes busBounce {
       0%, 100% { transform: translateY(0px) rotate(-1deg); }
-      50% { transform: translateY(-7px) rotate(1.5deg); }
+      50% { transform: translateY(-6px) rotate(1.5deg); }
   }
   @keyframes roadDots {
       0% { background-position: 0 0; }
@@ -2455,30 +2436,32 @@ st.markdown(
       justify-content: center;
       align-items: center;
       background: linear-gradient(165deg, #EFF6FF 0%, #FFFFFF 52%, #ECFDF5 100%);
-      animation: splashFadeOut 2.15s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      animation: splashFadeOut 1.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      cursor: pointer;
   }
   .splash-card {
       display: flex;
       flex-direction: column;
       align-items: center;
       text-align: center;
-      padding: 34px 38px 30px 38px;
-      background: rgba(255, 255, 255, 0.92);
+      padding: 32px 36px 28px 36px;
+      background: rgba(255, 255, 255, 0.95);
       border: 2px solid #DBEAFE;
-      border-radius: 32px;
-      box-shadow: 0 18px 45px rgba(59, 130, 246, 0.12);
+      border-radius: 30px;
+      box-shadow: 0 18px 42px rgba(59, 130, 246, 0.13);
   }
   .splash-logo-wrap {
-      animation: busBounce 1.1s ease-in-out infinite;
+      animation: busBounce 1.05s ease-in-out infinite;
       margin-bottom: 10px;
+      line-height: 0;
   }
   .splash-road {
-      width: 110px;
+      width: 108px;
       height: 4px;
       border-radius: 999px;
       background-image: repeating-linear-gradient(90deg, #93C5FD 0 10px, transparent 10px 18px);
-      animation: roadDots 0.9s linear infinite;
-      margin-bottom: 16px;
+      animation: roadDots 0.85s linear infinite;
+      margin-bottom: 15px;
   }
   .splash-badge {
       background: #EFF6FF;
@@ -2491,14 +2474,14 @@ st.markdown(
       margin-bottom: 8px;
   }
   .splash-name {
-      font-size: 1.65rem;
+      font-size: 1.62rem;
       font-weight: 900;
       letter-spacing: -0.03em;
       color: #0F172A;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
   }
   .splash-desc {
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 600;
       color: #64748B;
   }
@@ -2507,12 +2490,12 @@ st.markdown(
       border: 1.5px solid #DBEAFE;
       border-radius: 22px;
       padding: 18px 20px;
-      margin: 8px 0 10px 0;
-      box-shadow: 0 8px 22px rgba(59, 130, 246, 0.06);
+      margin: 6px 0 8px 0;
+      box-shadow: 0 6px 18px rgba(59, 130, 246, 0.06);
   }
   .hero-box.green {
       border-color: #BBF7D0;
-      box-shadow: 0 8px 22px rgba(16, 185, 129, 0.07);
+      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.07);
   }
   .pill {
       display: inline-flex;
@@ -2522,23 +2505,102 @@ st.markdown(
       border-radius: 999px;
       font-size: 0.76rem;
       font-weight: 800;
+      white-space: nowrap;
   }
   .pill-live { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
   .pill-blue { background: #EFF6FF; color: #1D4ED8; }
   .pill-green { background: #ECFDF5; color: #047857; }
   .pill-muted { background: #F1F5F9; color: #475569; }
   .eta-big {
-      font-size: 1.72rem;
+      font-size: 1.7rem;
       font-weight: 900;
       letter-spacing: -0.02em;
       color: #0F172A;
       margin: 7px 0 4px 0;
-      line-height: 1.2;
+      line-height: 1.22;
   }
   .eta-sub {
       font-size: 0.87rem;
       font-weight: 600;
       color: #64748B;
+  }
+  .ret-bar-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-height: 46px;
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-radius: 15px;
+      padding: 7px 13px;
+      margin: 0;
+  }
+  .ret-bar-lbl {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #475569;
+  }
+  .ret-bar-pill {
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 999px;
+  }
+  details.taxi-details {
+      background: #FFFFFF;
+      border: 1px solid #FDE68A;
+      border-radius: 15px;
+      padding: 8px 13px;
+      margin: 4px 0 10px 0;
+  }
+  details.taxi-details summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #92400E;
+  }
+  details.taxi-details summary::-webkit-details-marker { display: none; }
+  .taxi-hint {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #B45309;
+  }
+  .taxi-body-row {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed #FDE68A;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 0.78rem;
+  }
+  .taxi-call-group {
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+  }
+  a.taxi-call-chip {
+      text-decoration: none !important;
+      background: #FEF3C7;
+      color: #92400E !important;
+      border: 1px solid #FCD34D;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 800;
+  }
+  a.taxi-call-chip:hover {
+      background: #FDE68A;
   }
   .route-card {
       background: #FFFFFF;
@@ -2584,81 +2646,82 @@ st.markdown(
       border-color: #FECDD3;
   }
 </style>
-""",
-    unsafe_allow_html=True,
+"""
 )
+
 
 # =============================================================================
 # 6. 아기자기한 로고 · 첫 진입 인트로 스플래시 & 상단 브랜드 바
 # =============================================================================
 
-CUTE_BUS_LOGO_SVG = """
-<svg width="{size}" height="{size}" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="6" y="6" width="84" height="84" rx="26" fill="#EFF6FF"/>
-  <circle cx="72" cy="22" r="7" fill="#FDE68A"/>
-  <path d="M18 68C28 60 40 60 48 66C57 60 70 60 78 68" stroke="#A7F3D0" stroke-width="5" stroke-linecap="round"/>
-  <rect x="18" y="28" width="60" height="36" rx="13" fill="#3B82F6"/>
-  <rect x="23" y="33" width="22" height="14" rx="5" fill="#FFFFFF"/>
-  <rect x="49" y="33" width="24" height="14" rx="5" fill="#DBEAFE"/>
-  <circle cx="31" cy="40" r="2.2" fill="#1E293B"/>
-  <circle cx="38" cy="40" r="2.2" fill="#1E293B"/>
-  <path d="M32.5 43.2C33.8 44.5 35.2 44.5 36.5 43.2" stroke="#1E293B" stroke-width="1.7" stroke-linecap="round"/>
-  <rect x="20" y="51" width="56" height="5" fill="#60A5FA"/>
-  <circle cx="24" cy="56" r="3" fill="#FDE047"/>
-  <circle cx="72" cy="56" r="3" fill="#FCA5A5"/>
-  <circle cx="31" cy="65" r="7.5" fill="#1E293B"/>
-  <circle cx="31" cy="65" r="3.2" fill="#FFFFFF"/>
-  <circle cx="65" cy="65" r="7.5" fill="#1E293B"/>
-  <circle cx="65" cy="65" r="3.2" fill="#FFFFFF"/>
-  <path d="M46 28V21" stroke="#10B981" stroke-width="3" stroke-linecap="round"/>
-  <path d="M46 21C41 19 39 14 44 13C47 13 47 18 46 21Z" fill="#34D399"/>
-  <path d="M46 21C51 19 53 14 48 13C45 13 45 18 46 21Z" fill="#10B981"/>
-</svg>
-"""
+def get_cute_bus_svg(size: int = 34) -> str:
+    return (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 96 96" fill="none" '
+        'xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0;">'
+        '<rect x="6" y="6" width="84" height="84" rx="26" fill="#EFF6FF"/>'
+        '<circle cx="72" cy="22" r="7" fill="#FDE68A"/>'
+        '<path d="M18 68C28 60 40 60 48 66C57 60 70 60 78 68" stroke="#A7F3D0" stroke-width="5" stroke-linecap="round"/>'
+        '<rect x="18" y="28" width="60" height="36" rx="13" fill="#3B82F6"/>'
+        '<rect x="23" y="33" width="22" height="14" rx="5" fill="#FFFFFF"/>'
+        '<rect x="49" y="33" width="24" height="14" rx="5" fill="#DBEAFE"/>'
+        '<circle cx="31" cy="40" r="2.2" fill="#1E293B"/>'
+        '<circle cx="38" cy="40" r="2.2" fill="#1E293B"/>'
+        '<path d="M32.5 43.2C33.8 44.5 35.2 44.5 36.5 43.2" stroke="#1E293B" stroke-width="1.7" stroke-linecap="round"/>'
+        '<rect x="20" y="51" width="56" height="5" fill="#60A5FA"/>'
+        '<circle cx="24" cy="56" r="3" fill="#FDE047"/>'
+        '<circle cx="72" cy="56" r="3" fill="#FCA5A5"/>'
+        '<circle cx="31" cy="65" r="7.5" fill="#1E293B"/>'
+        '<circle cx="31" cy="65" r="3.2" fill="#FFFFFF"/>'
+        '<circle cx="65" cy="65" r="7.5" fill="#1E293B"/>'
+        '<circle cx="65" cy="65" r="3.2" fill="#FFFFFF"/>'
+        '<path d="M46 28V21" stroke="#10B981" stroke-width="3" stroke-linecap="round"/>'
+        '<path d="M46 21C41 19 39 14 44 13C47 13 47 18 46 21Z" fill="#34D399"/>'
+        '<path d="M46 21C51 19 53 14 48 13C45 13 45 18 46 21Z" fill="#10B981"/>'
+        '</svg>'
+    )
+
 
 if not st.session_state.intro_seen:
     st.session_state.intro_seen = True
-    st.markdown(
+    render_html(
         f"""
-        <div class="splash-overlay">
+        <div class="splash-overlay" onclick="this.style.display='none'">
           <div class="splash-card">
-            <div class="splash-logo-wrap">{CUTE_BUS_LOGO_SVG.format(size=88)}</div>
+            <div class="splash-logo-wrap">{get_cute_bus_svg(88)}</div>
             <div class="splash-road"></div>
             <span class="splash-badge">🌱 금산 군내버스 · 대전 34번</span>
             <div class="splash-name">금산 붕붕이</div>
             <div class="splash-desc">우리 동네 마을버스 실시간 길친구</div>
           </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 now_dt = get_kst_now()
 now_min = now_dt.hour * 60 + now_dt.minute
 
-top_l, top_r = st.columns([4.1, 1.2])
+top_l, top_r = safe_columns([4.0, 1.25], vertical_alignment="center")
 with top_l:
-    st.markdown(
+    render_html(
         f"""
         <div class="header-card">
           <span class="brand-row">
-            {CUTE_BUS_LOGO_SVG.format(size=34)}
-            <span>
+            {get_cute_bus_svg(32)}
+            <span class="brand-text-group">
               <span class="header-title">금산 붕붕이</span>
               <span class="header-sub">· 마을버스 &amp; 34번</span>
             </span>
           </span>
           <span class="pill pill-muted">🕒 {now_dt.strftime('%H:%M')}</span>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 with top_r:
     if st.button("🔄 새로고침", key="btn_refresh", **STRETCH_KW):
         st.cache_data.clear()
         st.rerun()
 
-tab_c1, tab_c2 = st.columns(2)
+tab_c1, tab_c2 = safe_columns(2)
 with tab_c1:
     if st.button(
         "💙 금산 군내 · 공공형",
@@ -2683,7 +2746,7 @@ with tab_c2:
 # [탭 1] 금산 군내 · 공공형 버스
 # =============================================================================
 if st.session_state.tab == "geumsan":
-    q_cols = st.columns(4)
+    q_cols = safe_columns(4)
     for col, preset in zip(q_cols, QUICK_GEUMSAN):
         with col:
             is_sel = (
@@ -2706,13 +2769,14 @@ if st.session_state.tab == "geumsan":
         s for s in all_stops if s != st.session_state.g_origin and s not in reach_set
     ]
 
-    sel_1, sel_2, sel_3 = st.columns([2.3, 2.3, 0.85])
+    sel_1, sel_2, sel_3 = safe_columns([2.3, 2.3, 0.8], vertical_alignment="bottom")
     with sel_1:
         o_idx = all_stops.index(st.session_state.g_origin) if st.session_state.g_origin in all_stops else 0
         picked_o = st.selectbox(
             "출발 정류장",
             options=all_stops,
             index=o_idx,
+            key=f"g_orig_sel_{st.session_state.g_origin}",
             format_func=lambda s: f"{'⭐ ' if NODES[s]['hub'] else ''}{s}",
         )
         if picked_o != st.session_state.g_origin:
@@ -2727,6 +2791,7 @@ if st.session_state.tab == "geumsan":
             "도착 정류장",
             options=dest_options,
             index=d_idx,
+            key=f"g_dest_sel_{st.session_state.g_origin}_{st.session_state.g_dest}",
             format_func=lambda s: f"{s} ({'직통' if s in reach_set else '환승'})",
         )
         if picked_d != st.session_state.g_dest:
@@ -2734,7 +2799,6 @@ if st.session_state.tab == "geumsan":
             st.rerun()
 
     with sel_3:
-        st.write("")
         if st.button("⇄", key="swap_g", help="출발·도착 바꾸기", **STRETCH_KW):
             st.session_state.g_origin, st.session_state.g_dest = (
                 st.session_state.g_dest,
@@ -2748,7 +2812,6 @@ if st.session_state.tab == "geumsan":
 
     if options:
         best = options[0]
-        # 선택 구간 모든 직통 노선의 실시간 차량 조회
         all_rids: list[str] = []
         for opt in options[:2]:
             for rid in GEUMSAN_TAGO_ROUTES.get(opt["bus_no"], [])[:4]:
@@ -2783,7 +2846,7 @@ if st.session_state.tab == "geumsan":
                 else '<span class="pill pill-muted">시간표 안내</span>'
             )
 
-        st.markdown(
+        render_html(
             f"""
             <div class="hero-box">
               <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -2799,11 +2862,9 @@ if st.session_state.tab == "geumsan":
               <div class="eta-big">{html.escape(headline)}</div>
               <div class="eta-sub">{html.escape(subline)}</div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-        # 차별화 도우미 3종 (① 귀가 막차 안전 배지 + ③ 카톡 한줄 복사 + ④ 택시 비교·콜택시 연결)
         ret_g = calc_geumsan_return_last(g_origin, g_dest, now_min)
         lat_o, lng_o = geumsan_stop_latlon(g_origin)
         lat_d, lng_d = geumsan_stop_latlon(g_dest)
@@ -2829,7 +2890,6 @@ if st.session_state.tab == "geumsan":
             green_theme=False,
         )
 
-        # 지도 렌더링: 승차~하차 구간 정류장 + 실시간 운행 버스 마커
         segment_stops = best["active_stops"][best["o_pos"] : best["d_pos"] + 1]
         map_points = []
         for s_nm in segment_stops:
@@ -2838,10 +2898,10 @@ if st.session_state.tab == "geumsan":
             map_points.append({"name": s_nm, "lat": lat, "lng": lng, "role": role})
         render_route_map(map_points, live_buses, accent_hex="#3B82F6")
 
-        # 노선별 간결한 시간표 카드
-        for opt in options:
+        # 상위 3개 주요 노선은 바로 표시하고, 나머지는 접어두어 화면을 깔끔하게 유지
+        for opt in options[:3]:
             chips_html = render_time_chips(opt["all_dep_times"], opt["offset_to_origin"], now_min, green=False)
-            st.markdown(
+            render_html(
                 f"""
                 <div class="route-card">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;flex-wrap:wrap;">
@@ -2853,9 +2913,27 @@ if st.session_state.tab == "geumsan":
                   </div>
                   <div>{chips_html}</div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )
+
+        if len(options) > 3:
+            with st.expander(f"📋 다른 직통 노선 {len(options) - 3}개 시간표 더 보기"):
+                for opt in options[3:]:
+                    chips_html = render_time_chips(opt["all_dep_times"], opt["offset_to_origin"], now_min, green=False)
+                    render_html(
+                        f"""
+                        <div class="route-card">
+                          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;flex-wrap:wrap;">
+                            <div>
+                              <b style="font-size:0.93rem;color:#0F172A;">{html.escape(opt['name'])}</b>
+                              <span style="font-size:0.79rem;color:#64748B;"> · {html.escape(opt['desc'])}</span>
+                            </div>
+                            <span style="font-size:0.76rem;font-weight:800;color:#2563EB;">{html.escape(opt['badge'])}</span>
+                          </div>
+                          <div>{chips_html}</div>
+                        </div>
+                        """
+                    )
 
     else:
         tr = find_simple_transfer(g_origin, g_dest, now_min)
@@ -2863,7 +2941,7 @@ if st.session_state.tab == "geumsan":
             st.info(
                 f"**{g_origin} → {g_dest}** 직통 버스가 없습니다. **{tr['hub']}**에서 1회 환승으로 이동할 수 있습니다."
             )
-            tc1, tc2 = st.columns(2)
+            tc1, tc2 = safe_columns(2)
             with tc1:
                 if st.button(
                     f"1구간 · {g_origin} → {tr['hub']} ({tr['leg1']['bus_no']}번)",
@@ -2888,7 +2966,7 @@ if st.session_state.tab == "geumsan":
 # [탭 2] 대전 외곽버스 34번 (서남부터미널 ↔ 복수 ↔ 진산 ↔ 대둔산휴게소)
 # =============================================================================
 else:
-    q_cols = st.columns(4)
+    q_cols = safe_columns(4)
     for col, preset in zip(q_cols, QUICK_DJ34):
         with col:
             is_sel = (
@@ -2907,7 +2985,7 @@ else:
                 st.session_state.dj_dest = preset["d"]
                 st.rerun()
 
-    dir_c1, dir_c2 = st.columns(2)
+    dir_c1, dir_c2 = safe_columns(2)
     with dir_c1:
         if st.button(
             "⬆️ 대전 서남부터미널 방면",
@@ -2939,7 +3017,7 @@ else:
     names_34 = [s["name"] for s in cur_stops]
     stop_map_34 = {s["name"]: s for s in cur_stops}
 
-    sc1, sc2 = st.columns(2)
+    sc1, sc2 = safe_columns(2)
     with sc1:
         b_opts = names_34[:-1]
         o_i = b_opts.index(st.session_state.dj_origin) if st.session_state.dj_origin in b_opts else 0
@@ -2947,6 +3025,7 @@ else:
             "출발 정류장",
             options=b_opts,
             index=o_i,
+            key=f"dj_orig_sel_{st.session_state.dj_dir}_{st.session_state.dj_origin}",
             format_func=lambda nm: f"{'⭐ ' if stop_map_34[nm]['hub'] else ''}{nm}",
         )
         if sel_o != st.session_state.dj_origin:
@@ -2961,6 +3040,7 @@ else:
             "도착 정류장",
             options=a_opts,
             index=d_i,
+            key=f"dj_dest_sel_{st.session_state.dj_dir}_{st.session_state.dj_origin}_{st.session_state.dj_dest}",
             format_func=lambda nm: f"{'🏁 ' if stop_map_34[nm]['hub'] else ''}{nm}",
         )
         if sel_d != st.session_state.dj_dest:
@@ -2974,10 +3054,8 @@ else:
         now_min,
     )
 
-    # 대전 34번 TAGO 실시간 위치 조회 (cityCode=25, routeId=DJB30300016)
     all_dj_buses, dj_api_status = fetch_live_bus_locations(25, ("DJB30300016",))
 
-    # 선택한 진행 방향(상행 46~88번 / 하행 1~46번)에 해당하는 차량 우선 필터링
     if st.session_state.dj_dir == "to_daedun":
         dir_buses = [b for b in all_dj_buses if b["nodeord"] == 0 or b["nodeord"] <= 46]
     else:
@@ -2991,7 +3069,6 @@ else:
         else None
     )
 
-    # 내 정류장 기준 접근 중인 차량과의 남은 정거장 계산
     origin_seq = dj["origin_item"].get("seq", 0)
     approaching_note = ""
     if dir_buses and origin_seq:
@@ -3023,7 +3100,7 @@ else:
             else '<span class="pill pill-muted">시간표 안내</span>'
         )
 
-    st.markdown(
+    render_html(
         f"""
         <div class="hero-box green">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -3039,11 +3116,9 @@ else:
           <div class="eta-big">{html.escape(head_34)}</div>
           <div class="eta-sub">{html.escape(sub_34)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
-    # 차별화 도우미 3종 (① 34번 귀가 막차 안전 배지 + ③ 카톡 한줄 복사 + ④ 택시 비교·콜택시 연결)
     ret_34 = calc_dj34_return_last(
         st.session_state.dj_dir,
         st.session_state.dj_origin,
@@ -3077,7 +3152,6 @@ else:
         green_theme=True,
     )
 
-    # 대전 34번 실제 지도 (실측 정류장 GPS 경로 + 실시간 버스 마커)
     dj_map_pts = []
     for idx_s in range(dj["idx_o"], dj["idx_d"] + 1):
         st_item = dj["stops"][idx_s]
@@ -3092,9 +3166,8 @@ else:
         )
     render_route_map(dj_map_pts, shown_buses, accent_hex="#10B981")
 
-    # 선택한 방향 시간표 카드
     chips_34 = render_time_chips(dj["dep_times"], dj["offset_o"], now_min, green=True)
-    st.markdown(
+    render_html(
         f"""
         <div class="route-card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
@@ -3103,6 +3176,5 @@ else:
           </div>
           <div>{chips_34}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
