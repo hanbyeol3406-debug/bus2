@@ -21,7 +21,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="금산 · 대전34 버스 안내",
+    page_title="금산 붕붕이 · 마을버스 길친구",
     page_icon="🚌",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -2079,10 +2079,278 @@ def render_time_chips(dep_times: list[str], offset_min: int, now_min: int, green
 
 
 # =============================================================================
+# 4-B. 금산 붕붕이 전용 차별화 기능 3종 (카카오맵에 없는 시골버스 맞춤 도우미)
+#   ① 🏡 돌아오는 막차 안전 계산기 (왕복 귀가 막차 시간 & 여유시간 자동 점검)
+#   ③ 💌 가족·어르신께 카톡/문자 한 줄 복사 버튼
+#   ④ 🚕 버스 대기가 길거나 끊겼을 때 택시 예상 요금 · 소요시간 · 콜택시 바로연결
+# =============================================================================
+
+def calc_geumsan_return_last(origin: str, dest: str, now_min: int) -> dict:
+    """목적지(dest)에서 다시 출발지(origin)로 돌아오는 오늘 가장 늦은 막차 계산"""
+    candidates = []
+    for bno, info in BUS_ROUTES.items():
+        stops = info["stops"]
+        if origin not in stops or dest not in stops or origin == dest:
+            continue
+        # 귀가 방향: dest -> origin
+        forward = stops.index(dest) < stops.index(origin)
+        act = stops if forward else list(reversed(stops))
+        raw = info["out_times"] if forward else (info["in_times"] or info["out_times"])
+        if not raw:
+            continue
+        d_pos = act.index(dest)
+        off = sum(estimate_segment_min(act[i], act[i + 1]) for i in range(d_pos))
+        for t_str in raw:
+            board_m = parse_hhmm_to_min(t_str) + off
+            candidates.append({"bus_no": bno, "board_m": board_m, "board_str": min_to_hhmm(board_m)})
+
+    if not candidates:
+        return {"exists": False}
+
+    candidates.sort(key=lambda x: x["board_m"])
+    last_item = candidates[-1]
+    remain = last_item["board_m"] - now_min
+    return {
+        "exists": True,
+        "bus_no": f"{last_item['bus_no']}번",
+        "board_str": last_item["board_str"],
+        "remain_min": remain,
+        "ended": remain < 0,
+    }
+
+
+def calc_dj34_return_last(cur_dir: str, origin_name: str, dest_name: str, now_min: int) -> dict:
+    """대전 34번 반대 방향(dest_name 부근 -> origin_name 부근) 오늘 막차 계산"""
+    ret_stops = DAEJEON_34_STOPS_TO_DAEJEON if cur_dir == "to_daedun" else DAEJEON_34_STOPS_TO_DAEDUN
+    col_key = "daedunsan" if cur_dir == "to_daedun" else "seonambu"
+    alias = {
+        "서남부터미널종점": "대전서남부터미널",
+        "서남부터미널기점": "대전서남부터미널",
+    }
+    target_start = alias.get(dest_name, dest_name)
+    names = [s["name"] for s in ret_stops]
+    idx = names.index(target_start) if target_start in names else 0
+    off = ret_stops[idx]["min"]
+    last_dep = DAEJEON_34_TIMETABLE[-1][col_key]
+    board_m = parse_hhmm_to_min(last_dep) + off
+    remain = board_m - now_min
+    return {
+        "exists": True,
+        "bus_no": "34번",
+        "from_stop": ret_stops[idx]["name"],
+        "board_str": min_to_hhmm(board_m),
+        "remain_min": remain,
+        "ended": remain < 0,
+    }
+
+
+def estimate_taxi_info(lat1: float, lng1: float, lat2: float, lng2: float) -> dict:
+    """두 정류장 좌표 간 도로 주행거리·소요시간·금산 기준 예상 택시비 산출"""
+    d_lat = (lat2 - lat1) * 111.0
+    d_lng = (lng2 - lng1) * 89.8
+    straight_km = math.hypot(d_lat, d_lng)
+    road_km = max(1.6, round(straight_km * 1.32, 1))
+    taxi_min = max(4, int(round(road_km / 0.72)))
+    # 충남 농어촌 택시 기본요금(1.8km 4,500원) + 거리요금 근사치 (시계외 장거리 소폭 가산)
+    extra_km = max(0.0, road_km - 1.8)
+    raw_fare = 4500 + extra_km * (1150 if road_km <= 15 else 1300)
+    fare = int(round(raw_fare / 500.0) * 500)
+    return {"km": road_km, "min": taxi_min, "fare": fare}
+
+
+def render_smart_helper_bar(
+    return_info: dict,
+    return_route_label: str,
+    share_text: str,
+    taxi_info: dict,
+    wait_min: int,
+    is_ended: bool,
+    green_theme: bool = False,
+) -> None:
+    """
+    지도 바로 위에 들어가는 깔끔한 보조 도우미 바:
+    - [항상 표시] 🏡 귀가 막차 안전 배지 + 💌 카톡/문자 한 줄 복사 버튼
+    - [대기 30분↑ 또는 막차 종료 시 자동 표시, 평소엔 접기 토글] 🚕 택시비 비교 & 금산 콜택시 연결
+    """
+    accent = "#059669" if green_theme else "#2563EB"
+    soft_bg = "#F0FDF4" if green_theme else "#EFF6FF"
+    soft_bd = "#BBF7D0" if green_theme else "#DBEAFE"
+
+    if not return_info.get("exists"):
+        ret_title = f"🏡 돌아올 때 ({return_route_label})"
+        ret_val = "직통 귀가 노선 없음 · 거점 환승 확인"
+        ret_pill_bg, ret_pill_fg = "#F1F5F9", "#64748B"
+    elif return_info["ended"]:
+        ret_title = f"🏡 돌아올 막차 ({return_route_label})"
+        ret_val = f"오늘 끊김 ({return_info['board_str']} 종료)"
+        ret_pill_bg, ret_pill_fg = "#FEF2F2", "#DC2626"
+    else:
+        rem = return_info["remain_min"]
+        rem_txt = f"{rem // 60}시간 {rem % 60}분 여유" if rem >= 60 else f"{rem}분 남음!"
+        ret_title = f"🏡 돌아올 막차 ({return_route_label})"
+        ret_val = f"{return_info['board_str']} ({return_info['bus_no']} · {rem_txt})"
+        if rem <= 90:
+            ret_pill_bg, ret_pill_fg = "#FFFBEB", "#B45309"
+        else:
+            ret_pill_bg, ret_pill_fg = soft_bg, accent
+
+    show_taxi_prominent = is_ended or wait_min >= 30
+    fare_str = f"{taxi_info['fare']:,}원"
+    wait_reason = "오늘 버스가 끝났어요" if is_ended else f"다음 차까지 {wait_min}분 남았어요"
+    safe_share = json.dumps(share_text, ensure_ascii=False)
+
+    taxi_open_attr = "open" if show_taxi_prominent else ""
+    base_height = 148 if show_taxi_prominent else 96
+
+    helper_html = f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"/>
+<style>
+  * {{ box-sizing: border-box; font-family: 'Pretendard', -apple-system, 'Malgun Gothic', sans-serif; }}
+  html, body {{ margin: 0; padding: 0; background: transparent; }}
+  .wrap {{ display: flex; flex-direction: column; gap: 7px; }}
+  .row-top {{
+    display: flex; align-items: stretch; gap: 7px;
+  }}
+  .ret-card {{
+    flex: 1;
+    display: flex; flex-direction: column; justify-content: center;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 15px;
+    padding: 8px 12px;
+    min-width: 0;
+  }}
+  .ret-lbl {{ font-size: 11px; font-weight: 700; color: #64748B; margin-bottom: 2px; }}
+  .ret-val {{
+    display: inline-block;
+    font-size: 12.5px; font-weight: 800;
+    color: {ret_pill_fg};
+    background: {ret_pill_bg};
+    padding: 2px 8px; border-radius: 999px;
+    width: fit-content; max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }}
+  .copy-btn {{
+    border: 1.5px solid {soft_bd};
+    background: {soft_bg};
+    color: {accent};
+    border-radius: 15px;
+    padding: 0 13px;
+    font-size: 12.5px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s ease;
+  }}
+  .copy-btn:hover {{ filter: brightness(0.97); }}
+  details.taxi-box {{
+    background: #FFFFFF;
+    border: 1px solid #FDE68A;
+    border-radius: 15px;
+    padding: 7px 12px;
+  }}
+  details.taxi-box summary {{
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: #92400E;
+  }}
+  details.taxi-box summary::-webkit-details-marker {{ display: none; }}
+  .taxi-body {{
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px dashed #FDE68A;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 12px;
+    color: #475569;
+  }}
+  .call-links {{ display: inline-flex; gap: 5px; flex-wrap: wrap; }}
+  .call-chip {{
+    text-decoration: none;
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid #FCD34D;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 800;
+  }}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="row-top">
+    <div class="ret-card">
+      <span class="ret-lbl">{html.escape(ret_title)}</span>
+      <span class="ret-val">{html.escape(ret_val)}</span>
+    </div>
+    <button class="copy-btn" id="copyBtn" onclick="copyGuide()">💌 안내 복사</button>
+  </div>
+  <details class="taxi-box" {taxi_open_attr}>
+    <summary>
+      <span>🚕 택시 타면 약 {fare_str} · {taxi_info['min']}분 ({taxi_info['km']}km)</span>
+      <span style="font-size:11px;color:#B45309;">{html.escape(wait_reason)} ▾</span>
+    </summary>
+    <div class="taxi-body">
+      <span>금산 콜택시 바로 전화</span>
+      <div class="call-links">
+        <a class="call-chip" href="tel:041-753-1000">📞 개인택시 753-1000</a>
+        <a class="call-chip" href="tel:041-752-2000">📞 금산운수 752-2000</a>
+        <a class="call-chip" href="tel:041-751-1234">📞 우리택시 751-1234</a>
+      </div>
+    </div>
+  </details>
+</div>
+<script>
+  const msg = {safe_share};
+  function copyGuide() {{
+    const btn = document.getElementById('copyBtn');
+    const done = () => {{
+      btn.innerText = '✅ 복사 완료!';
+      setTimeout(() => {{ btn.innerText = '💌 안내 복사'; }}, 1800);
+    }};
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(msg).then(done).catch(() => fallbackCopy());
+    }} else {{
+      fallbackCopy();
+    }}
+  }}
+  function fallbackCopy() {{
+    const ta = document.createElement('textarea');
+    ta.value = msg;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn = document.getElementById('copyBtn');
+    btn.innerText = '✅ 복사 완료!';
+    setTimeout(() => {{ btn.innerText = '💌 안내 복사'; }}, 1800);
+  }}
+</script>
+</body></html>"""
+
+    if hasattr(st, "iframe"):
+        st.iframe(helper_html, height=base_height)
+    else:
+        components.html(helper_html, height=base_height, scrolling=False)
+
+
+# =============================================================================
 # 5. 세션 상태 초기화 및 정돈된 미니멀 · 아기자기 UI 스타일
 # =============================================================================
 
 DEFAULTS = {
+    "intro_seen": False,
     "tab": "geumsan",
     "g_origin": "금산읍",
     "g_dest": "진산",
@@ -2142,17 +2410,97 @@ st.markdown(
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: #FFFFFF;
-      border: 1px solid #E2E8F0;
-      border-radius: 18px;
+      background: linear-gradient(135deg, #FFFFFF 0%, #F0F7FF 100%);
+      border: 1.5px solid #DBEAFE;
+      border-radius: 20px;
       padding: 11px 16px;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.06);
+  }
+  .brand-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
   }
   .header-title {
       font-size: 1.08rem;
       font-weight: 900;
       letter-spacing: -0.02em;
       color: #0F172A;
+  }
+  .header-sub {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748B;
+      margin-left: 2px;
+  }
+  @keyframes splashFadeOut {
+      0% { opacity: 1; visibility: visible; }
+      74% { opacity: 1; visibility: visible; transform: scale(1); }
+      100% { opacity: 0; visibility: hidden; transform: scale(1.03); pointer-events: none; }
+  }
+  @keyframes busBounce {
+      0%, 100% { transform: translateY(0px) rotate(-1deg); }
+      50% { transform: translateY(-7px) rotate(1.5deg); }
+  }
+  @keyframes roadDots {
+      0% { background-position: 0 0; }
+      100% { background-position: -36px 0; }
+  }
+  .splash-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 999999;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(165deg, #EFF6FF 0%, #FFFFFF 52%, #ECFDF5 100%);
+      animation: splashFadeOut 2.15s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  .splash-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 34px 38px 30px 38px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 2px solid #DBEAFE;
+      border-radius: 32px;
+      box-shadow: 0 18px 45px rgba(59, 130, 246, 0.12);
+  }
+  .splash-logo-wrap {
+      animation: busBounce 1.1s ease-in-out infinite;
+      margin-bottom: 10px;
+  }
+  .splash-road {
+      width: 110px;
+      height: 4px;
+      border-radius: 999px;
+      background-image: repeating-linear-gradient(90deg, #93C5FD 0 10px, transparent 10px 18px);
+      animation: roadDots 0.9s linear infinite;
+      margin-bottom: 16px;
+  }
+  .splash-badge {
+      background: #EFF6FF;
+      color: #2563EB;
+      border: 1px solid #BFDBFE;
+      font-size: 0.76rem;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+  }
+  .splash-name {
+      font-size: 1.65rem;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      color: #0F172A;
+      margin-bottom: 5px;
+  }
+  .splash-desc {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #64748B;
   }
   .hero-box {
       background: #FFFFFF;
@@ -2241,8 +2589,49 @@ st.markdown(
 )
 
 # =============================================================================
-# 6. 상단 바 & 노선 탭
+# 6. 아기자기한 로고 · 첫 진입 인트로 스플래시 & 상단 브랜드 바
 # =============================================================================
+
+CUTE_BUS_LOGO_SVG = """
+<svg width="{size}" height="{size}" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="6" y="6" width="84" height="84" rx="26" fill="#EFF6FF"/>
+  <circle cx="72" cy="22" r="7" fill="#FDE68A"/>
+  <path d="M18 68C28 60 40 60 48 66C57 60 70 60 78 68" stroke="#A7F3D0" stroke-width="5" stroke-linecap="round"/>
+  <rect x="18" y="28" width="60" height="36" rx="13" fill="#3B82F6"/>
+  <rect x="23" y="33" width="22" height="14" rx="5" fill="#FFFFFF"/>
+  <rect x="49" y="33" width="24" height="14" rx="5" fill="#DBEAFE"/>
+  <circle cx="31" cy="40" r="2.2" fill="#1E293B"/>
+  <circle cx="38" cy="40" r="2.2" fill="#1E293B"/>
+  <path d="M32.5 43.2C33.8 44.5 35.2 44.5 36.5 43.2" stroke="#1E293B" stroke-width="1.7" stroke-linecap="round"/>
+  <rect x="20" y="51" width="56" height="5" fill="#60A5FA"/>
+  <circle cx="24" cy="56" r="3" fill="#FDE047"/>
+  <circle cx="72" cy="56" r="3" fill="#FCA5A5"/>
+  <circle cx="31" cy="65" r="7.5" fill="#1E293B"/>
+  <circle cx="31" cy="65" r="3.2" fill="#FFFFFF"/>
+  <circle cx="65" cy="65" r="7.5" fill="#1E293B"/>
+  <circle cx="65" cy="65" r="3.2" fill="#FFFFFF"/>
+  <path d="M46 28V21" stroke="#10B981" stroke-width="3" stroke-linecap="round"/>
+  <path d="M46 21C41 19 39 14 44 13C47 13 47 18 46 21Z" fill="#34D399"/>
+  <path d="M46 21C51 19 53 14 48 13C45 13 45 18 46 21Z" fill="#10B981"/>
+</svg>
+"""
+
+if not st.session_state.intro_seen:
+    st.session_state.intro_seen = True
+    st.markdown(
+        f"""
+        <div class="splash-overlay">
+          <div class="splash-card">
+            <div class="splash-logo-wrap">{CUTE_BUS_LOGO_SVG.format(size=88)}</div>
+            <div class="splash-road"></div>
+            <span class="splash-badge">🌱 금산 군내버스 · 대전 34번</span>
+            <div class="splash-name">금산 붕붕이</div>
+            <div class="splash-desc">우리 동네 마을버스 실시간 길친구</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 now_dt = get_kst_now()
 now_min = now_dt.hour * 60 + now_dt.minute
@@ -2252,8 +2641,14 @@ with top_l:
     st.markdown(
         f"""
         <div class="header-card">
-          <span class="header-title">🚌 금산 · 대전34 버스</span>
-          <span class="pill pill-muted">🕒 {now_dt.strftime('%H:%M')} 기준</span>
+          <span class="brand-row">
+            {CUTE_BUS_LOGO_SVG.format(size=34)}
+            <span>
+              <span class="header-title">금산 붕붕이</span>
+              <span class="header-sub">· 마을버스 &amp; 34번</span>
+            </span>
+          </span>
+          <span class="pill pill-muted">🕒 {now_dt.strftime('%H:%M')}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -2406,6 +2801,32 @@ if st.session_state.tab == "geumsan":
             </div>
             """,
             unsafe_allow_html=True,
+        )
+
+        # 차별화 도우미 3종 (① 귀가 막차 안전 배지 + ③ 카톡 한줄 복사 + ④ 택시 비교·콜택시 연결)
+        ret_g = calc_geumsan_return_last(g_origin, g_dest, now_min)
+        lat_o, lng_o = geumsan_stop_latlon(g_origin)
+        lat_d, lng_d = geumsan_stop_latlon(g_dest)
+        taxi_g = estimate_taxi_info(lat_o, lng_o, lat_d, lng_d)
+        ret_tail = f" (돌아오는 막차 {ret_g['board_str']})" if ret_g.get("exists") and not ret_g.get("ended") else ""
+        if best["is_ended"]:
+            share_g = (
+                f"[금산 붕붕이 🚌] {g_origin}→{g_dest} 오늘 버스는 끝났어요. "
+                f"내일 첫차는 {best['bus_no']}번({best['next_board_str']}경)이고, 택시 타시면 약 {taxi_g['fare']:,}원({taxi_g['min']}분)이에요."
+            )
+        else:
+            share_g = (
+                f"[금산 붕붕이 🚌] {g_origin}에서 {best['next_board_str']}쯤 {best['bus_no']}번 버스 타시면 돼요! "
+                f"{g_dest}까지 약 {best['ride_min']}분 걸려요.{ret_tail}"
+            )
+        render_smart_helper_bar(
+            return_info=ret_g,
+            return_route_label=f"{g_dest}→{g_origin}",
+            share_text=share_g,
+            taxi_info=taxi_g,
+            wait_min=best["wait_from_now"],
+            is_ended=best["is_ended"],
+            green_theme=False,
         )
 
         # 지도 렌더링: 승차~하차 구간 정류장 + 실시간 운행 버스 마커
@@ -2620,6 +3041,40 @@ else:
         </div>
         """,
         unsafe_allow_html=True,
+    )
+
+    # 차별화 도우미 3종 (① 34번 귀가 막차 안전 배지 + ③ 카톡 한줄 복사 + ④ 택시 비교·콜택시 연결)
+    ret_34 = calc_dj34_return_last(
+        st.session_state.dj_dir,
+        st.session_state.dj_origin,
+        st.session_state.dj_dest,
+        now_min,
+    )
+    taxi_34 = estimate_taxi_info(
+        dj["origin_item"]["lat"],
+        dj["origin_item"]["lng"],
+        dj["dest_item"]["lat"],
+        dj["dest_item"]["lng"],
+    )
+    ret34_tail = f" (돌아오는 34번 막차 {ret_34['board_str']})" if not ret_34["ended"] else ""
+    if dj["is_ended"]:
+        share_34 = (
+            f"[금산 붕붕이 🚌] {st.session_state.dj_origin}→{st.session_state.dj_dest} 오늘 34번 버스는 끝났어요. "
+            f"내일 첫차는 {dj['next_board_str']}경이고, 택시 타시면 약 {taxi_34['fare']:,}원({taxi_34['min']}분)이에요."
+        )
+    else:
+        share_34 = (
+            f"[금산 붕붕이 🚌] {st.session_state.dj_origin}(정류장번호 {dj['origin_item']['id']})에서 "
+            f"{dj['next_board_str']}쯤 34번 버스 타시면 돼요! {st.session_state.dj_dest}까지 약 {dj['ride_min']}분 걸려요.{ret34_tail}"
+        )
+    render_smart_helper_bar(
+        return_info=ret_34,
+        return_route_label=f"{ret_34['from_stop']} 출발",
+        share_text=share_34,
+        taxi_info=taxi_34,
+        wait_min=dj["wait_from_now"],
+        is_ended=dj["is_ended"],
+        green_theme=True,
     )
 
     # 대전 34번 실제 지도 (실측 정류장 GPS 경로 + 실시간 버스 마커)
