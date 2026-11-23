@@ -22,11 +22,20 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="금산 · 대전34번 버스 시간표",
+    page_title="금산 붕붕이",
     page_icon="🚌",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
+
+# 브라우저 새로고침 시 처음 마운트되는 시작 화면.
+# 같은 렌더 위치를 유지해 일반 위젯 조작 때 애니메이션을 다시 시작하지 않습니다.
+splash_html = '<style>\n  .bb-splash { position:fixed; inset:0; z-index:999999; display:grid; place-items:center;\n    background:#eff6ff; color:#0f2851; text-align:center; pointer-events:none;\n    animation:bb-dismiss .3s ease 1.3s both; }\n  .bb-splash-badge { width:92px; height:92px; margin:0 auto 18px; border-radius:26px;\n    background:#1d4ed8; display:grid; place-items:center; }\n  .bb-splash-title { font:900 33px/1.2 system-ui,sans-serif; letter-spacing:-.06em; }\n  .bb-splash-sub { margin-top:8px; font:600 14px/1.5 system-ui,sans-serif; color:#42597a; }\n  @keyframes bb-dismiss { from { opacity:1; visibility:visible; } to { opacity:0; visibility:hidden; } }\n  @media (prefers-reduced-motion:reduce) { .bb-splash { animation-duration:.01s; } }\n</style>\n<div class="bb-splash" aria-hidden="true"><div>\n  <div class="bb-splash-badge"><svg width="56" height="56" viewBox="0 0 56 56" fill="none">\n    <rect x="9" y="6" width="38" height="42" rx="10" fill="#fff"/>\n    <rect x="14" y="13" width="28" height="16" rx="4" fill="#bfdbfe"/>\n    <path d="M28 13v16" stroke="#fff" stroke-width="2"/>\n    <circle cx="18" cy="37" r="3" fill="#1d4ed8"/><circle cx="38" cy="37" r="3" fill="#1d4ed8"/>\n    <path d="M16 46v5m24-5v5" stroke="#fff" stroke-width="5" stroke-linecap="round"/>\n  </svg></div>\n  <div class="bb-splash-title">금산 붕붕이</div>\n  <div class="bb-splash-sub">우리 동네 버스, 한눈에</div>\n</div></div>'
+if hasattr(st, "html"):
+    st.html(splash_html)
+else:
+    st.markdown(splash_html, unsafe_allow_html=True)
+
 
 
 GEUMSAN_TAGO_ROUTES: dict[str, list[str]] = json.loads(r'''{"15": ["CNB292000006"], "68": ["CNB292000097"], "73": ["CNB292000104", "CNB292000105"], "73-1": ["CNB292000105"], "77": ["CNB292000118"], "81": ["CNB292000122"], "100": ["CNB292000001"], "101": ["CNB292000002"], "102": ["CNB292000003"], "110": ["CNB292000004"], "120": ["CNB292000005"], "150": ["CNB292000007"], "160": ["CNB292000008"], "161": ["CNB292000009"], "162": ["CNB292000010"], "163": ["CNB292000011"], "170": ["CNB292000012"], "171": ["CNB292000013"], "172": ["CNB292000014"], "200": ["CNB292000015"], "201": ["CNB292000016"], "202": ["CNB292000017"], "210": ["CNB292000018"], "211": ["CNB292000019"], "212": ["CNB292000020"], "220": ["CNB292000021"], "221": ["CNB292000022"], "222": ["CNB292000023"], "223": ["CNB292000024"], "230": ["CNB292000025"], "231": ["CNB292000026"], "232": ["CNB292000027"], "240": ["CNB292000028"], "250": ["CNB292000029"], "300": ["CNB292000030"], "310": ["CNB292000031"], "311": ["CNB292000032"], "320": ["CNB292000033"], "321": ["CNB292000034"], "322": ["CNB292000035"], "323": ["CNB292000036"], "324": ["CNB292000037"], "330": ["CNB292000038"], "331": ["CNB292000039"], "332": ["CNB292000040"], "333": ["CNB292000041"], "334": ["CNB292000042"], "335": ["CNB292000043"], "336": ["CNB292000044"], "340": ["CNB292000045"], "350": ["CNB292000046"], "351": ["CNB292000047"], "352": ["CNB292000048"], "360": ["CNB292000049"], "361": ["CNB292000050"], "400": ["CNB292000051"], "401": ["CNB292000052"], "410": ["CNB292000053"], "411": ["CNB292000054"], "420": ["CNB292000055"], "421": ["CNB292000056"], "422": ["CNB292000057"], "430": ["CNB292000058"], "431": ["CNB292000059"], "440": ["CNB292000060"], "441": ["CNB292000061"], "442": ["CNB292000062"], "443": ["CNB292000063"], "444": ["CNB292000064"], "500": ["CNB292000065"], "501": ["CNB292000066"], "510": ["CNB292000067"], "511": ["CNB292000068"], "520": ["CNB292000069"], "521": ["CNB292000070"], "522": ["CNB292000071"], "523": ["CNB292000072"], "530": ["CNB292000073"], "531": ["CNB292000074"], "532": ["CNB292000075"], "540": ["CNB292000076"], "541": ["CNB292000077"], "542": ["CNB292000078"], "550": ["CNB292000079"], "551": ["CNB292000080"], "560": ["CNB292000081"], "561": ["CNB292000082"], "600": ["CNB292000083"], "610": ["CNB292000084"], "611": ["CNB292000085"], "620": ["CNB292000086"], "630": ["CNB292000087"], "631": ["CNB292000088"], "632": ["CNB292000089"], "640": ["CNB292000090"], "641": ["CNB292000091"], "650": ["CNB292000092"], "651": ["CNB292000093"], "652": ["CNB292000094"], "653": ["CNB292000095"], "670": ["CNB292000096"], "700": ["CNB292000098"], "710": ["CNB292000099"], "711": ["CNB292000100"], "712": ["CNB292000101"], "720": ["CNB292000102"], "721": ["CNB292000103"], "730": ["CNB292000106"], "731": ["CNB292000107"], "732": ["CNB292000108"], "740": ["CNB292000109"], "750": ["CNB292000110"], "751": ["CNB292000111"], "760": ["CNB292000112"], "761": ["CNB292000113"], "762": ["CNB292000114"], "763": ["CNB292000115"], "764": ["CNB292000116"], "765": ["CNB292000117"], "800": ["CNB292000119"], "801": ["CNB292000120"], "802": ["CNB292000121"], "810": ["CNB292000123"], "811": ["CNB292000124"], "812": ["CNB292000125"], "813": ["CNB292000126"], "814": ["CNB292000127"], "900": ["CNB292000128"], "901": ["CNB292000129"], "910": ["CNB292000130"], "911": ["CNB292000131"], "912": ["CNB292000132"], "920": ["CNB292000133"], "921": ["CNB292000134"], "922": ["CNB292000135"], "923": ["CNB292000136"], "930": ["CNB292000137"], "931": ["CNB292000138"], "932": ["CNB292000139"], "940": ["CNB292000140"]}''')
@@ -2886,7 +2895,23 @@ with h_col1:
     st.markdown(
         f"""
 <div class="app-header">
-  <div class="app-title">🚌 금산 · 대전34번 버스 시간표</div>
+  <style>
+.bb-brand-row{{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}}
+.bb-brand-icon{{display:grid;place-items:center;width:44px;height:44px;background:#1d4ed8;border-radius:13px;flex:none}}
+.bb-brand-icon svg{{width:30px;height:30px}}
+.bb-bus-track{{margin:6px auto 0;width:104px;border-bottom:2px dashed #93b4da;text-align:left}}
+.bb-moving-bus{{display:inline-block;font-size:23px;animation:bb-drive 2.1s ease-in-out infinite alternate}}
+@keyframes bb-drive{{from{{transform:translateX(70px)}}to{{transform:translateX(0)}}}}
+@media(prefers-reduced-motion:reduce){{.bb-moving-bus{{animation:none}}}}
+</style>
+  <div class="app-title bb-brand-row"><span class="bb-brand-icon" aria-hidden="true"><svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+    <rect x="9" y="6" width="38" height="42" rx="10" fill="#fff"/>
+    <rect x="14" y="13" width="28" height="16" rx="4" fill="#bfdbfe"/>
+    <path d="M28 13v16" stroke="#fff" stroke-width="2"/>
+    <circle cx="18" cy="37" r="3" fill="#1d4ed8"/><circle cx="38" cy="37" r="3" fill="#1d4ed8"/>
+    <path d="M16 46v5m24-5v5" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  </svg></span><span>금산 붕붕이</span></div>
+  <div class="bb-bus-track" aria-hidden="true"><span class="bb-moving-bus">🚌</span></div>
   <span class="clock-pill">현재 {now_dt.strftime('%H:%M')}</span>
 </div>
 """,
