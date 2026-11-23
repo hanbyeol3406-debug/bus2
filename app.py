@@ -17,6 +17,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pydeck as pdk
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -49,47 +50,72 @@ def fetch_gps(key, city, route):
 
 
 def show_gps(city, routes, bus_no):
-    with st.expander(f"📍 {bus_no}번 어디쯤?"):
-        if not st.button("🗺️ 버스 지도 보기", key=f"gps_{city}"):
-            return
+    st.markdown(f"#### 🗺️ {bus_no}번 버스 위치")
+    try:
+        key = st.secrets.get("DATA_GO_KR_API_KEY", "")
+    except (FileNotFoundError, KeyError):
+        key = ""
+    key = str(key or os.getenv("DATA_GO_KR_API_KEY", "")).strip()
+    if not key:
+        st.info("관리자가 GPS 조회 키를 설정하면 사용할 수 있습니다.")
+        return
+    if not routes:
+        st.info("이 노선은 GPS 조회가 연결되어 있지 않습니다.")
+        return
+    results = [fetch_gps(key, city, rid) for rid in routes]
+    rows = [row for result in results if result for row in result if isinstance(row, dict)]
+    if any(result is None for result in results):
+        st.info("일부 또는 전체 차량 위치를 조회하지 못했습니다. 시간표는 아래에서 확인할 수 있습니다.")
+    elif not rows:
+        st.info("현재 API에서 이 노선의 차량 위치가 반환되지 않았습니다.")
+    seen = set()
+    pins = []
+    for row in rows:
+        stop = str(row.get("nodenm") or "").strip()
         try:
-            key = st.secrets.get("DATA_GO_KR_API_KEY", "")
-        except (FileNotFoundError, KeyError):
-            key = ""
-        key = str(key or os.getenv("DATA_GO_KR_API_KEY", "")).strip()
-        if not key:
-            st.info("관리자가 GPS 조회 키를 설정하면 사용할 수 있습니다.")
-            return
-        if not routes:
-            st.info("이 노선은 GPS 조회가 연결되어 있지 않습니다.")
-            return
-        results = [fetch_gps(key, city, rid) for rid in routes]
-        rows = [row for result in results if result for row in result if isinstance(row, dict)]
-        if any(result is None for result in results):
-            st.info("일부 또는 전체 차량 위치를 조회하지 못했습니다. 시간표는 아래에서 확인할 수 있습니다.")
-        elif not rows:
-            st.info("현재 API에서 이 노선의 차량 위치가 반환되지 않았습니다.")
-        seen = set()
-        pins = []
-        for row in rows:
-            stop = str(row.get("nodenm") or "").strip()
-            try:
-                lat, lon = float(row.get("gpslati")), float(row.get("gpslong"))
-                coords = f"{lat:.5f}, {lon:.5f}" if 33 <= lat <= 39 and 124 <= lon <= 132 else ""
-            except (TypeError, ValueError):
-                coords = ""
-            identity = (row.get("vehicleno"), stop, coords)
-            if identity not in seen:
-                seen.add(identity)
-                st.text(" · ".join(filter(None, [stop, coords])) or "차량 위치 상세 정보 없음")
-                if coords:
-                    pins.append({"lat": lat, "lon": lon})
-        if pins:
-            st.map(pd.DataFrame(pins), zoom=11)
-        elif rows:
-            st.caption("지도에 표시할 GPS 좌표가 없습니다.")
-        if rows:
-            st.caption("노선 전체에서 조회된 위치입니다. 선택한 방향의 도착 예정 시간은 아닙니다.")
+            lat, lon = float(row.get("gpslati")), float(row.get("gpslong"))
+            coords = f"{lat:.5f}, {lon:.5f}" if 33 <= lat <= 39 and 124 <= lon <= 132 else ""
+        except (TypeError, ValueError):
+            coords = ""
+        identity = (row.get("vehicleno"), stop, coords)
+        if identity not in seen:
+            seen.add(identity)
+            if stop:
+                st.text(f"🚏 {stop}")
+            if coords:
+                pins.append({"lat": lat, "lon": lon, "label": str(bus_no), "stop": stop or "정류장 정보 없음"})
+    if pins:
+        frame = pd.DataFrame(pins)
+        layers = [
+            pdk.Layer("ScatterplotLayer", frame, get_position="[lon, lat]", get_radius=21,
+                      radius_units="pixels", get_fill_color=[29, 78, 216, 245],
+                      stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=3, pickable=True),
+            pdk.Layer("TextLayer", frame, get_position="[lon, lat]", get_text="label",
+                      get_size=15, get_color=[255, 255, 255], get_alignment_baseline='"center"'),
+        ]
+        deck = pdk.Deck(layers=layers, map_style="light", initial_view_state=pdk.ViewState(
+            latitude=float(frame.lat.mean()), longitude=float(frame.lon.mean()), zoom=10 if len(frame)>1 else 12),
+            tooltip={"text": "{label}번 버스 · {stop}"})
+        st.pydeck_chart(deck, height=300)
+    elif rows:
+        st.caption("지도에 표시할 GPS 좌표가 없습니다.")
+    if rows:
+        st.caption("노선 전체에서 조회된 위치입니다. 선택한 방향의 도착 예정 시간은 아닙니다.")
+
+
+def show_taxi_comparison(bus, key):
+    with st.expander("🚕 택시 요금 · 🚌 버스 시간 비교"):
+        wait = max(0, bus["wait_from_now"])
+        ride = bus["ride_min"]
+        bus_col, taxi_col = st.columns(2)
+        with bus_col:
+            st.metric("🚌 버스 예상 총 시간", f"{wait + ride}분")
+            st.caption(f"시간표 기준 · 대기 {wait}분 + 탑승 약 {ride}분")
+        with taxi_col:
+            fare = st.number_input("🚕 택시 앱에 나온 예상 요금 (원)", min_value=0,
+                                   value=0, step=100, key=f"taxi_fare_{key}")
+            st.metric("택시 예상 요금", f"{fare:,}원" if fare else "미입력")
+        st.caption("택시 요금은 자동 조회하지 않습니다. 같은 출발지·목적지의 예상 요금을 입력하세요.")
 
 
 def _supports_width_stretch() -> bool:
@@ -2823,6 +2849,7 @@ if st.session_state.tab == "geumsan":
     if options:
         best = options[0]
         show_gps(34310, GEUMSAN_TAGO_ROUTES.get(best["bus_no"], []), best["bus_no"])
+        show_taxi_comparison(best, "geumsan")
         b_cls = (
             "badge-last"
             if best["lb_level"] == "last"
@@ -3066,6 +3093,7 @@ else:
     )
 
     show_gps(25, ["DJB30300016"], "34")
+    show_taxi_comparison(dj_res, "dj34")
     b34_cls = (
         "badge-last"
         if dj_res["lb_level"] == "last"
