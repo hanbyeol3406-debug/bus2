@@ -11,7 +11,7 @@ import html
 import json
 import math
 import os
-from urllib.parse import unquote, urlencode
+from urllib.parse import quote, unquote, urlencode
 from urllib.request import Request, urlopen
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -2569,6 +2569,20 @@ def _embed_html(html_code: str, height: int) -> None:
         components.html(html_code, height=height, scrolling=False)
 
 
+def render_family_sms(message: str) -> None:
+    body = quote("[금산 붕붕이] " + message + " (공식 시간표 기준)", safe="")
+    _embed_html(f"""
+    <a id="family-sms" href="sms:?body={body}" style="display:inline-block;padding:10px 14px;
+      border:1px solid #CBD5E1;border-radius:12px;color:#1E293B;background:#fff;
+      font:700 15px system-ui;text-decoration:none">💬 엄마한테 문자 보내기</a>
+    <script>
+      if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {{
+        document.getElementById('family-sms').setAttribute('href', 'sms:&body={body}');
+      }}
+    </script>
+    """, height=54)
+
+
 def render_tts_button(tts_text: str) -> None:
     """어르신용 깔끔한 한국어 음성 안내 버튼"""
     safe_json = json.dumps(tts_text, ensure_ascii=False)
@@ -3047,6 +3061,7 @@ elif st.session_state.tab == "geumsan":
                 f"{best['lb_badge']}."
             )
         render_tts_button(tts_msg)
+        render_family_sms(tts_msg)
 
         # 해당 구간을 운행하는 전체 직통 노선별 오늘 시간표 한눈에 표시
         st.markdown(f"#### 📅 `{g_origin} ➔ {g_dest}` 운행 버스 시간표 ({len(options)}개 노선)")
@@ -3282,6 +3297,7 @@ else:
         f"{st.session_state.dj_dest}까지는 약 {dj_res['ride_min']}분 걸립니다. {dj_res['lb_badge']}."
     )
     render_tts_button(tts_34)
+    render_family_sms(tts_34)
 
     # 양방향 공식 시간표 한 장에 깔끔하게 표시
     chips_to_dd = render_time_badges(
