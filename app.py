@@ -88,7 +88,7 @@ def show_gps(city, routes, bus_no):
         frame = pd.DataFrame(pins)
         layers = [
             pdk.Layer("ScatterplotLayer", frame, get_position="[lon, lat]", get_radius=14,
-                      radius_units="pixels", get_fill_color=[220, 38, 38, 245],
+                      radius_units='"pixels"', radius_min_pixels=13, radius_max_pixels=16, get_fill_color=[220, 38, 38, 245],
                       stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=3, pickable=True),
             pdk.Layer("TextLayer", frame, get_position="[lon, lat]", get_text="label",
                       get_size=12, get_color=[255, 255, 255], get_alignment_baseline='"center"'),
