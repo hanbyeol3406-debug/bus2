@@ -49,8 +49,37 @@ def fetch_gps(key, city, route):
         return None
 
 
+def ordered_route_stops(rows):
+    stops = []
+    for row in rows:
+        try:
+            order = int(row["nodeord"])
+            lat, lon = float(row["gpslati"]), float(row["gpslong"])
+            if 33 <= lat <= 39 and 124 <= lon <= 132:
+                stops.append((order, lon, lat, str(row.get("nodenm") or "정류장")))
+        except (ValueError, TypeError, KeyError):
+            continue
+    return sorted(set(stops))
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_route_stops(key, city, route):
+    query = urlencode(dict(serviceKey=unquote(key), cityCode=city, routeId=route,
+                           numOfRows=1000, pageNo=1, _type="json"))
+    try:
+        endpoint = "https://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteAcctoThrghSttnList"
+        with urlopen(endpoint + "?" + query, timeout=4) as response:
+            data = json.load(response)["response"]
+        if str(data["header"]["resultCode"]) not in ("0", "00"):
+            return []
+        rows = ((data.get("body") or {}).get("items") or {}).get("item") or []
+        return ordered_route_stops([rows] if isinstance(rows, dict) else rows)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []
+
+
 def show_gps(city, routes, bus_no):
-    st.markdown(f"#### 🗺️ {bus_no}번 버스 위치")
+    st.markdown(f"#### 🗺️ {bus_no}번 노선과 버스 위치")
     try:
         key = st.secrets.get("DATA_GO_KR_API_KEY", "")
     except (FileNotFoundError, KeyError):
@@ -84,22 +113,47 @@ def show_gps(city, routes, bus_no):
                 st.text(f"🚏 {stop}")
             if coords:
                 pins.append({"lat": lat, "lon": lon, "label": str(bus_no), "stop": stop or "정류장 정보 없음"})
-    if pins:
-        frame = pd.DataFrame(pins)
-        layers = [
+    paths, stops = [], []
+    for rid in routes:
+        route_stops = fetch_route_stops(key, city, rid)
+        if len(route_stops) >= 2:
+            paths.append({"path": [[lon, lat] for _, lon, lat, _ in route_stops]})
+            stops.extend({"lat": lat, "lon": lon, "description": name} for _, lon, lat, name in route_stops)
+    if paths or pins:
+        layers = []
+        if paths:
+            layers.extend([
+                pdk.Layer("PathLayer", paths, get_path="path", get_color=[37, 99, 235, 210], width_min_pixels=3),
+                pdk.Layer("ScatterplotLayer", stops, get_position="[lon, lat]", get_radius=4,
+                          radius_min_pixels=3, radius_max_pixels=5, get_fill_color=[255, 255, 255],
+                          stroked=True, get_line_color=[37, 99, 235], line_width_min_pixels=1, pickable=True),
+            ])
+        if pins:
+            frame = pd.DataFrame(pins).assign(description=lambda df: df.label + "번 버스 · " + df.stop)
+            layers.extend([
             pdk.Layer("ScatterplotLayer", frame, get_position="[lon, lat]", get_radius=14,
                       radius_units='"pixels"', radius_min_pixels=13, radius_max_pixels=16, get_fill_color=[220, 38, 38, 245],
                       stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=3, pickable=True),
             pdk.Layer("TextLayer", frame, get_position="[lon, lat]", get_text="label",
                       get_size=12, get_color=[255, 255, 255], get_alignment_baseline='"center"'),
-        ]
+            ])
+        points = stops + pins
+        lats = [pt["lat"] for pt in points]
+        lons = [pt["lon"] for pt in points]
+        span = max(max(lats)-min(lats), max(lons)-min(lons), 0.01)
+        zoom = min(13, max(6, math.log2(0.25 / span) + 9.8))
         deck = pdk.Deck(layers=layers, map_provider="carto", map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", initial_view_state=pdk.ViewState(
-            latitude=float(frame.lat.mean()), longitude=float(frame.lon.mean()), zoom=10 if len(frame)>1 else 12),
-            tooltip={"text": "{label}번 버스 · {stop}"})
+            latitude=(min(lats)+max(lats))/2, longitude=(min(lons)+max(lons))/2, zoom=zoom),
+            tooltip={"text": "{description}"})
         st.pydeck_chart(deck, height=300)
-        st.caption("🔴 지도 위 숫자는 버스 번호입니다. 배경 지도가 안 보이면 위 정류장 이름으로 위치를 확인하세요.")
+        if paths:
+            st.caption("🔵 경유 정류장 연결선 · ⚪ 정류장 · 🔴 실시간 버스. 연결선은 실제 도로 궤적과 다를 수 있습니다.")
+        else:
+            st.caption("노선 정보를 불러오지 못해 실시간 차량 위치만 표시합니다.")
     elif rows:
         st.caption("지도에 표시할 GPS 좌표가 없습니다.")
+    if not paths and not pins:
+        st.caption("노선을 표시하려면 공공데이터포털에서 TAGO 버스노선정보 활용 신청을 확인하세요.")
     if rows:
         st.caption("노선 전체에서 조회된 위치입니다. 선택한 방향의 도착 예정 시간은 아닙니다.")
 
