@@ -12,7 +12,7 @@ import json
 import math
 import os
 from urllib.parse import unquote, urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -87,35 +87,117 @@ def show_gps(city, routes, bus_no):
     if pins:
         frame = pd.DataFrame(pins)
         layers = [
-            pdk.Layer("ScatterplotLayer", frame, get_position="[lon, lat]", get_radius=21,
-                      radius_units="pixels", get_fill_color=[29, 78, 216, 245],
+            pdk.Layer("ScatterplotLayer", frame, get_position="[lon, lat]", get_radius=14,
+                      radius_units="pixels", get_fill_color=[220, 38, 38, 245],
                       stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=3, pickable=True),
             pdk.Layer("TextLayer", frame, get_position="[lon, lat]", get_text="label",
-                      get_size=15, get_color=[255, 255, 255], get_alignment_baseline='"center"'),
+                      get_size=12, get_color=[255, 255, 255], get_alignment_baseline='"center"'),
         ]
-        deck = pdk.Deck(layers=layers, map_style="light", initial_view_state=pdk.ViewState(
+        deck = pdk.Deck(layers=layers, map_provider="carto", map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", initial_view_state=pdk.ViewState(
             latitude=float(frame.lat.mean()), longitude=float(frame.lon.mean()), zoom=10 if len(frame)>1 else 12),
             tooltip={"text": "{label}번 버스 · {stop}"})
         st.pydeck_chart(deck, height=300)
+        st.caption("🔴 지도 위 숫자는 버스 번호입니다. 배경 지도가 안 보이면 위 정류장 이름으로 위치를 확인하세요.")
     elif rows:
         st.caption("지도에 표시할 GPS 좌표가 없습니다.")
     if rows:
         st.caption("노선 전체에서 조회된 위치입니다. 선택한 방향의 도착 예정 시간은 아닙니다.")
 
 
-def show_taxi_comparison(bus, key):
-    with st.expander("🚕 택시 요금 · 🚌 버스 시간 비교"):
-        wait = max(0, bus["wait_from_now"])
-        ride = bus["ride_min"]
-        bus_col, taxi_col = st.columns(2)
-        with bus_col:
-            st.metric("🚌 버스 예상 총 시간", f"{wait + ride}분")
-            st.caption(f"시간표 기준 · 대기 {wait}분 + 탑승 약 {ride}분")
-        with taxi_col:
-            fare = st.number_input("🚕 택시 앱에 나온 예상 요금 (원)", min_value=0,
-                                   value=0, step=100, key=f"taxi_fare_{key}")
-            st.metric("택시 예상 요금", f"{fare:,}원" if fare else "미입력")
-        st.caption("택시 요금은 자동 조회하지 않습니다. 같은 출발지·목적지의 예상 요금을 입력하세요.")
+def taxi_distance_fare(distance_km, pickup):
+    base, included_m, step_m = (4000, 1000, 75) if pickup == "금산" else (4800, 1800, 125)
+    return base + 100 * (max(0, round(distance_km * 1000) - included_m) // step_m)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def taxi_api_json(url, key, **params):
+    request = Request(url + "?" + urlencode(params), headers={"Authorization": "KakaoAK " + key})
+    with urlopen(request, timeout=6) as response:
+        return json.load(response)
+
+
+def taxi_stop_choices(name, region, key):
+    query = f"{region} {name.removesuffix('종점')} 정류장"
+    data = taxi_api_json("https://dapi.kakao.com/v2/local/search/keyword.json", key, query=query)
+    return [item for item in data.get("documents", []) if item.get("x") and item.get("y")]
+
+
+def show_taxi_comparison():
+    st.markdown("### 🚕 택시 vs 🚌 버스")
+    mode = st.radio("비교할 버스", ["금산 버스", "대전 34번"], horizontal=True)
+    now = get_kst_now()
+    minute = now.hour * 60 + now.minute
+    if mode == "금산 버스":
+        origin, dest = st.session_state.g_origin, st.session_state.g_dest
+        options = find_all_geumsan_options(origin, dest, minute)
+        bus = options[0] if options else None
+    else:
+        origin, dest = st.session_state.dj_origin, st.session_state.dj_dest
+        bus = evaluate_daejeon_34(st.session_state.dj_dir, origin, dest, minute)
+    st.caption(f"버스 메뉴에서 선택한 구간: {origin} → {dest}")
+    pool = sorted(NODES) if mode == "금산 버스" else list(dict.fromkeys([origin, dest] + [x["name"] for x in bus["stops"]]))
+    start = st.selectbox("🚏 출발 정류장", pool, index=pool.index(origin), key=f"taxi_start_{mode}_{origin}")
+    end = st.selectbox("🏁 도착 정류장", pool, index=pool.index(dest), key=f"taxi_end_{mode}_{dest}")
+    if mode == "금산 버스":
+        options = find_all_geumsan_options(start, end, minute)
+        bus = options[0] if options else None
+    else:
+        bus = None
+        for direction in (st.session_state.dj_dir, "to_daejeon", "to_daedun"):
+            candidate = evaluate_daejeon_34(direction, start, end, minute)
+            names = [item["name"] for item in candidate["stops"]]
+            if start in names and end in names and names.index(start) < names.index(end):
+                bus = candidate
+                break
+    try:
+        key = st.secrets.get("KAKAO_REST_API_KEY", "")
+    except (FileNotFoundError, KeyError):
+        key = ""
+    key = str(key or os.getenv("KAKAO_REST_API_KEY", "")).strip()
+    distance = None
+    if start == end:
+        st.info("출발과 도착 정류장을 다르게 선택하세요.")
+    elif not key:
+        st.info("관리자가 KAKAO_REST_API_KEY를 설정하면 정류장 사이 도로 거리와 요금을 자동으로 계산합니다.")
+    else:
+        coords = []
+        try:
+            for label, name in (("출발", start), ("도착", end)):
+                region = "금산" if mode == "금산 버스" or "진산" in name or "복수" in name or "대둔산" in name else ""
+                choices = taxi_stop_choices(name, region, key)
+                if not choices:
+                    st.warning(f"{label} 정류장 ‘{name}’을 지도에서 찾지 못했습니다.")
+                    break
+                selected = st.selectbox(f"{label} 위치 확인", range(len(choices)), index=0 if len(choices) == 1 else None,
+                                        format_func=lambda i, choices=choices: choices[i]["place_name"] + " · " + choices[i].get("address_name", ""),
+                                        key=f"taxi_match_{label}_{name}")
+                if selected is None:
+                    break
+                item = choices[selected]
+                coords.append(f"{item['x']},{item['y']}")
+            if len(coords) == 2 and coords[0] != coords[1]:
+                route = taxi_api_json("https://apis-navi.kakaomobility.com/v1/directions", key, origin=coords[0], destination=coords[1], priority="RECOMMEND")["routes"][0]
+                if route.get("result_code") == 0:
+                    distance = route["summary"]["distance"] / 1000
+                    st.caption(f"자동차 경로 약 {distance:.1f} km")
+            if len(coords) == 2 and distance is None:
+                st.info("두 위치 사이의 자동차 경로를 확인하지 못했습니다.")
+        except (OSError, ValueError, TypeError, KeyError, IndexError):
+            st.warning("지도 검색 또는 길찾기에 실패했습니다. 잠시 후 다시 시도하거나 API 설정을 확인해 주세요.")
+    pickup = st.radio("택시 운임 기준 (택시 출발 지역)", ["금산", "대전"], horizontal=True,
+                      index=int("대전" in start or "서남부" in start), key=f"taxi_region_{start}")
+    left, right = st.columns(2)
+    with left:
+        if bus:
+            wait, ride = max(0, bus["wait_from_now"]), bus["ride_min"]
+            st.metric("🚌 버스 예상 총 시간", f"{wait + ride:,}분")
+            st.caption(f"시간표 기준 · 대기 {wait:,}분 + 탑승 약 {ride}분")
+        else:
+            st.metric("🚌 버스 예상 총 시간", "직행 정보 없음")
+    with right:
+        st.metric("🚕 택시 예상 요금", f"약 {taxi_distance_fare(distance, pickup):,}원" if distance is not None else "경로 확인 필요")
+        st.caption("주간 중형택시 거리 요금만 반영합니다. 정체·할증·통행료는 포함하지 않습니다.")
+
 
 
 def _supports_width_stretch() -> bool:
@@ -2604,20 +2686,20 @@ st.markdown(
   div.stButton > button[kind="primary"] {{
       box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22) !important;
   }}
-  :is(.st-key-nav_geumsan,.st-key-nav_dj34) div.stButton > button {{
+  :is(.st-key-nav_geumsan,.st-key-nav_dj34,.st-key-nav_taxi) div.stButton > button {{
       min-height: 94px !important;
       border-radius: 21px !important;
       padding: 0.6rem 0.45rem !important;
   }}
-  :is(.st-key-nav_geumsan,.st-key-nav_dj34) div.stButton p {{
+  :is(.st-key-nav_geumsan,.st-key-nav_dj34,.st-key-nav_taxi) div.stButton p {{
       line-height: 1.23 !important;
       font-weight: 800 !important;
       text-align: center;
   }}
-  :is(.st-key-nav_geumsan,.st-key-nav_dj34) div.stButton p::first-line {{
+  :is(.st-key-nav_geumsan,.st-key-nav_dj34,.st-key-nav_taxi) div.stButton p::first-line {{
       font-size: 2rem;
   }}
-  :is(.st-key-nav_geumsan,.st-key-nav_dj34) button[kind="primary"] {{
+  :is(.st-key-nav_geumsan,.st-key-nav_dj34,.st-key-nav_taxi) button[kind="primary"] {{
       background: #1D4ED8 !important;
       color: white !important;
       border-color: #1D4ED8 !important;
@@ -2746,7 +2828,7 @@ with h_col2:
     st.session_state.large_text = st.toggle("🔍 큰 글씨", value=st.session_state.large_text)
 
 # 최상단 사이트 메뉴 탭 버튼 딱 2개!
-menu_c1, menu_c2 = st.columns(2)
+menu_c1, menu_c2, menu_c3 = st.columns(3)
 with menu_c1:
     st.button(
         "🚌  \n금산 버스",
@@ -2766,11 +2848,18 @@ with menu_c2:
         **STRETCH_KW,
     )
 
+with menu_c3:
+    st.button("🚕  \n택시 비교", key="nav_taxi",
+              type="primary" if st.session_state.tab == "taxi" else "secondary",
+              on_click=set_tab, args=("taxi",), **STRETCH_KW)
+
 
 # =============================================================================
 # [화면 1] 🔵 금산 군내 · 공공형 버스 (출발·도착만 고르면 끝!)
 # =============================================================================
-if st.session_state.tab == "geumsan":
+if st.session_state.tab == "taxi":
+    show_taxi_comparison()
+elif st.session_state.tab == "geumsan":
     st.caption("자주 타는 구간을 누르거나 아래에서 출발지·도착지만 고르세요. 버스 번호를 몰라도 다음 차를 바로 찾아줍니다.")
 
     # 자주 타는 구간 원터치 버튼 4개
@@ -2849,7 +2938,6 @@ if st.session_state.tab == "geumsan":
     if options:
         best = options[0]
         show_gps(34310, GEUMSAN_TAGO_ROUTES.get(best["bus_no"], []), best["bus_no"])
-        show_taxi_comparison(best, "geumsan")
         b_cls = (
             "badge-last"
             if best["lb_level"] == "last"
@@ -3093,7 +3181,6 @@ else:
     )
 
     show_gps(25, ["DJB30300016"], "34")
-    show_taxi_comparison(dj_res, "dj34")
     b34_cls = (
         "badge-last"
         if dj_res["lb_level"] == "last"
